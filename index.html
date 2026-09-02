@@ -985,6 +985,7 @@
         </div>
     </div>
 
+    <!-- SCRIPT DE LÓGICA DO INTERFACE -->
     <script>
         const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const ANOS = Array.from({length: 11}, (_, i) => (2020 + i).toString());
@@ -1218,7 +1219,6 @@
             
             document.getElementById(`sec-${viewId}`).classList.add('active');
             
-            // Ativa o link correspondente no menu
             const targetLink = document.querySelector(`.nav-links a[onclick*="'${viewId}'"]`);
             if (targetLink) targetLink.parentElement.classList.add('active');
 
@@ -1231,7 +1231,6 @@
             document.getElementById('page-title').innerText = titles[viewId];
             if (viewId === 'relatorios') renderReportSummary();
             
-            // Fecha sidebar em telas menores ao navegar
             document.getElementById('sidebar').classList.remove('mobile-open');
         }
 
@@ -1576,7 +1575,6 @@
                 processes = processes.filter(p => p.id !== deleteTarget.id);
                 showToast("Demanda removida do sistema.", "danger");
             } else if (deleteTarget.type === 'user') {
-                // Desvincula processos associados antes de deletar o usuário
                 processes.forEach(p => {
                     if (p.userId == deleteTarget.id) p.userId = 0;
                 });
@@ -1613,7 +1611,6 @@
                 csv += `"${u.name}";"${p.system}";"${p.protocol}";"${p.desc}";"${formatDate(p.assignedAt)}";"${p.priority}";"${p.year}";"${p.month}";"${p.week}";"${p.status}";"${prazo.label}"\n`;
             });
 
-            // \ufeff Adiciona o BOM UTF-8 para garantir acentuação correta no Excel
             const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1628,6 +1625,52 @@
             const isDark = document.body.classList.contains('dark-mode');
             document.getElementById('theme-icon').className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
         }
+    </script>
+
+    <!-- INTEGRAÇÃO COM SEU FIREBASE BASEADO NAS SUAS CREDENCIAIS -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+        import { 
+            getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Suas credenciais fornecidas
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4S6EbV3Z70a7tyk6F_VDgYE_k7ZuFBoQ",
+            authDomain: "cac-painel.firebaseapp.com",
+            projectId: "cac-painel",
+            storageBucket: "cac-painel.firebasestorage.app",
+            messagingSenderId: "357351612350",
+            appId: "1:357351612350:web:758d49e9f895521867e3ef",
+            measurementId: "G-68C60C0K57"
+        };
+
+        // Inicialização do Firebase e serviços
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const db = getFirestore(app);
+
+        // Ouvinte do Firestore em Tempo Real para Processos
+        onSnapshot(collection(db, "processos"), (snapshot) => {
+            if (!snapshot.empty) {
+                window.processes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (typeof applyFilters === "function") applyFilters();
+            }
+        });
+
+        // Ouvinte do Firestore em Tempo Real para Servidores
+        onSnapshot(collection(db, "servidores"), (snapshot) => {
+            if (!snapshot.empty) {
+                window.users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (typeof populateDropdowns === "function") populateDropdowns();
+                if (typeof applyFilters === "function") applyFilters();
+            }
+        });
+
+        // Expõe os métodos do Firebase para o escopo global
+        window.db = db;
+        window.firestoreTools = { addDoc, doc, updateDoc, deleteDoc, collection };
     </script>
 </body>
 </html>
