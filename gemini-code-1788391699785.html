@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Executivo de Gestão Integrada - CIAC</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #1e3a8a;
+            --accent-hover: #1e40af;
+            --bg-main: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #059669;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --info: #2563eb;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            --sidebar-width: 270px;
+        }
+
+        body.dark-mode {
+            --primary: #38bdf8;
+            --bg-main: #0b0f19;
+            --bg-card: #111827;
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --border: #1f2937;
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* TOAST NOTIFICATIONS */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            min-width: 320px;
+            padding: 14px 18px;
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text-main);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+            border-left: 4px solid var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.danger { border-left-color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* SIDEBAR */
+        aside {
+            width: var(--sidebar-width);
+            background-color: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 24px 16px;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            padding: 0 8px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), #3b82f6);
+            color: white;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3);
+        }
+
+        .logo-area h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+
+        .nav-links {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .nav-links li a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: var(--radius);
+            font-weight: 600;
+            font-size: 13.5px;
+        }
+
+        .nav-links li.active a, .nav-links li a:hover {
+            background-color: rgba(30, 58, 138, 0.08);
+            color: var(--accent);
+        }
+
+        body.dark-mode .nav-links li.active a {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--primary);
+        }
+
+        /* MAIN CONTENT */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        header {
+            background-color: var(--bg-card);
+            padding: 18px 32px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 90;
+        }
+
+        .mobile-toggle {
+            display: none;
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            color: var(--text-main);
+            cursor: pointer;
+            margin-right: 12px;
+        }
+
+        .header-title { display: flex; align-items: center; }
+        .header-title h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .role-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .role-badge.visitor { background: #f1f5f9; color: #475569; border: 1px solid var(--border); }
+        .role-badge.admin { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        body.dark-mode .role-badge.visitor { background: #1f2937; color: #9ca3af; }
+        body.dark-mode .role-badge.admin { background: #1e3a8a; color: #93c5fd; border-color: #2563eb; }
+
+        .content-body {
+            padding: 28px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* CONTROLS BAR */
+        .controls-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .filter-group select, .search-box input {
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background-color: var(--bg-card);
+            color: var(--text-main);
+            font-size: 13px;
+            outline: none;
+            font-weight: 600;
+        }
+
+        .search-box { position: relative; flex: 1; min-width: 260px; max-width: 400px; }
+        .search-box input { width: 100%; padding-left: 36px; }
+        .search-box i {
+            position: absolute; left: 12px; top: 50%;
+            transform: translateY(-50%); color: var(--text-muted); font-size: 13px;
+        }
+
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .btn {
+            border: none;
+            padding: 9px 16px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 12.5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-accent { background-color: var(--accent); color: white; }
+        .btn-accent:hover { background-color: var(--accent-hover); }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-success:hover { filter: brightness(0.9); }
+        .btn-secondary { background-color: #475569; color: white; }
+        .btn-secondary:hover { background-color: #334155; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-outline:hover { background-color: var(--border); }
+
+        /* KPIS & CHARTS */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            padding: 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .kpi-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .kpi-value { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
+        .kpi-subtext { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            padding: 22px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .chart-card h3 {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chart-container { position: relative; height: 230px; width: 100%; }
+
+        /* TABLES */
+        .card-block {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            padding: 18px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .card-header h3 { font-size: 15px; font-weight: 800; }
+
+        .table-responsive { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            background-color: var(--bg-main);
+            color: var(--text-muted);
+            font-weight: 800;
+            padding: 12px 18px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover td {
+            background-color: rgba(0,0,0,0.015);
+        }
+        body.dark-mode tr:hover td {
+            background-color: rgba(255,255,255,0.02);
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .badge-sipac { background: #e0f2fe; color: #0369a1; }
+        .badge-sagitta { background: #fef3c7; color: #b45309; }
+        .badge-success { background: #d1fae5; color: #047857; }
+        .badge-warning { background: #ffedd5; color: #c2410c; }
+        .badge-danger { background: #ffe4e6; color: #be123c; }
+
+        body.dark-mode .badge-sipac { background: #075985; color: #e0f2fe; }
+        body.dark-mode .badge-sagitta { background: #78350f; color: #fef3c7; }
+        body.dark-mode .badge-success { background: #064e3b; color: #a7f3d0; }
+        body.dark-mode .badge-warning { background: #7c2d12; color: #ffedd5; }
+        body.dark-mode .badge-danger { background: #881337; color: #ffe4e6; }
+
+        .prazo-ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .prazo-warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+        .prazo-expired { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+        body.dark-mode .prazo-ok { background: #064e3b; color: #a7f3d0; border-color: #047857; }
+        body.dark-mode .prazo-warn { background: #78350f; color: #fde68a; border-color: #b45309; }
+        body.dark-mode .prazo-expired { background: #7f1d1d; color: #fecaca; border-color: #991b1b; }
+
+        /* MODAIS */
+        .modal-backdrop {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 16px;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 560px;
+            padding: 26px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 14px;
+        }
+
+        .modal-header h3 { font-size: 16px; font-weight: 800; }
+
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; }
+
+        .form-group input, .form-group select {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-main);
+            outline: none;
+            font-size: 13.5px;
+        }
+
+        .view-section { display: none; }
+        .view-section.active { display: flex; flex-direction: column; gap: 24px; }
+
+        .print-header { display: none; }
+
+        /* RESPONSIVIDADE */
+        @media (max-width: 1024px) {
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            aside {
+                position: fixed;
+                top: 0; left: 0; bottom: 0;
+                transform: translateX(-100%);
+                box-shadow: 5px 0 25px rgba(0,0,0,0.2);
+            }
+            aside.mobile-open { transform: translateX(0); }
+            .mobile-toggle { display: block; }
+            .content-body { padding: 16px; }
+            header { padding: 14px 16px; }
+            .controls-row { flex-direction: column; align-items: stretch; }
+            .search-box { max-width: 100%; }
+            .btn-group { width: 100%; justify-content: space-between; }
+            .btn-group .btn { flex: 1; justify-content: center; }
+        }
+
+        @media print {
+            aside, header, .controls-bar, .btn-group, .admin-only, #toast-container { display: none !important; }
+            body { overflow: visible !important; height: auto !important; background: white; color: black; }
+            main { overflow: visible !important; }
+            .content-body { padding: 0; }
+            .card-block, .chart-card, .kpi-card { border: 1px solid #ccc !important; box-shadow: none !important; break-inside: avoid; }
+            .print-header { display: block; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .print-header h2 { font-size: 18px; text-transform: uppercase; font-weight: 800; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toast-container"></div>
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+        <div>
+            <div class="logo-area">
+                <div class="logo-icon">C</div>
+                <h1>CIAC</h1>
+            </div>
+            <ul class="nav-links">
+                <li class="active"><a href="#" onclick="navigate('visao-geral', event)"><i class="fa-solid fa-chart-pie"></i> Painel Geral</a></li>
+                <li><a href="#" onclick="navigate('processos', event)"><i class="fa-solid fa-list-check"></i> Demandas & Prazos</a></li>
+                <li><a href="#" onclick="navigate('relatorios', event)"><i class="fa-solid fa-file-invoice"></i> Relatório Gerencial</a></li>
+                <li class="admin-only"><a href="#" onclick="navigate('usuarios', event)"><i class="fa-solid fa-users"></i> Gestão de Servidores</a></li>
+            </ul>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); padding-top: 14px; border-top: 1px solid var(--border);">
+            <p><strong>CIAC Management 2.1</strong></p>
+            <p>Controle Avançado de Produtividade</p>
+        </div>
+    </aside>
+
+    <!-- WORKSPACE MAIN -->
+    <main>
+        <header>
+            <div class="header-title">
+                <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                <h2 id="page-title">Painel Geral de Desempenho</h2>
+            </div>
+            <div class="header-actions">
+                <div id="user-role-badge" class="role-badge visitor">
+                    <i class="fa-solid fa-eye"></i> <span id="lbl-user-role">Modo Visitante</span>
+                </div>
+
+                <button class="btn btn-outline" onclick="toggleTheme()" title="Alternar Tema">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
+
+                <button id="btn-change-pass" class="btn btn-outline admin-only" onclick="openChangePassModal()" style="display: none;">
+                    <i class="fa-solid fa-key"></i> Alterar Senha
+                </button>
+
+                <button id="btn-login-trigger" class="btn btn-accent" onclick="openLoginModal()">
+                    <i class="fa-solid fa-lock"></i> Coordenador
+                </button>
+                <button id="btn-logout-trigger" class="btn btn-secondary" onclick="handleLogout()" style="display: none;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Sair
+                </button>
+            </div>
+        </header>
+
+        <div class="content-body">
+            
+            <div class="print-header">
+                <h2>CIAC - Relatório Executivo de Produtividade e Desempenho</h2>
+                <p>Gerado automaticamente pelo Sistema de Gestão de Demandas</p>
+            </div>
+
+            <!-- CONTROLS & FILTERS BAR -->
+            <div class="controls-bar">
+                <div class="controls-row">
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="search-global" placeholder="Buscar protocolo, demanda, servidor..." onkeyup="applyFilters()">
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-outline" onclick="resetFilters()">
+                            <i class="fa-solid fa-rotate-left"></i> Limpar Filtros
+                        </button>
+                        <button class="btn btn-success" onclick="exportCSV()">
+                            <i class="fa-solid fa-file-excel"></i> Exportar CSV
+                        </button>
+                        <button class="btn btn-secondary" onclick="window.print()">
+                            <i class="fa-solid fa-print"></i> PDF / Imprimir
+                        </button>
+                    </div>
+                </div>
+
+                <div class="controls-row" style="border-top: 1px solid var(--border); padding-top: 12px;">
+                    <div class="filter-group">
+                        <label>Servidor:</label>
+                        <select id="filter-servidor" onchange="applyFilters()"><option value="todos">Todos</option></select>
+
+                        <label>Origem:</label>
+                        <select id="filter-origem" onchange="applyFilters()">
+                            <option value="todos">Todas</option>
+                            <option value="SIPAC">SIPAC</option>
+                            <option value="SAGITTA">SAGITTA</option>
+                        </select>
+
+                        <label>Ano:</label>
+                        <select id="filter-ano" onchange="applyFilters()"></select>
+
+                        <label>Mês:</label>
+                        <select id="filter-mes" onchange="applyFilters()"></select>
+
+                        <label>Semana:</label>
+                        <select id="filter-semana" onchange="applyFilters()">
+                            <option value="todos">Todas</option>
+                            <option value="1">1ª Semana</option>
+                            <option value="2">2ª Semana</option>
+                            <option value="3">3ª Semana</option>
+                            <option value="4">4ª Semana</option>
+                        </select>
+
+                        <label>Status:</label>
+                        <select id="filter-status" onchange="applyFilters()">
+                            <option value="todos">Todos</option>
+                            <option value="Concluído">Concluído</option>
+                            <option value="Em Andamento">Em Andamento</option>
+                            <option value="Pendente">Pendente</option>
+                        </select>
+
+                        <label>Prazo Regimental:</label>
+                        <select id="filter-prazo" onchange="applyFilters()">
+                            <option value="todos">Todos</option>
+                            <option value="OK">No Prazo</option>
+                            <option value="Atenção">Atenção (&lt;24h)</option>
+                            <option value="Excedido">Excedido</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 1: PAINEL GERAL -->
+            <div id="sec-visao-geral" class="view-section active">
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>Total de Demandas</span><i class="fa-solid fa-folder-open"></i></div>
+                        <div class="kpi-value" id="kpi-total">0</div>
+                        <div class="kpi-subtext">Processos / Tickets no total</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>Concluídos</span><i class="fa-solid fa-circle-check" style="color:var(--success)"></i></div>
+                        <div class="kpi-value" id="kpi-concluidos">0</div>
+                        <div class="kpi-subtext" id="kpi-concluidos-rate">0% do volume total</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>Em Andamento</span><i class="fa-solid fa-clock" style="color:var(--warning)"></i></div>
+                        <div class="kpi-value" id="kpi-andamento">0</div>
+                        <div class="kpi-subtext">Carga de trabalho ativa</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>Pendentes</span><i class="fa-solid fa-triangle-exclamation" style="color:var(--danger)"></i></div>
+                        <div class="kpi-value" id="kpi-pendentes">0</div>
+                        <div class="kpi-subtext">Aguardando providências</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>Conformidade com SLA</span><i class="fa-solid fa-shield-halved" style="color:var(--accent)"></i></div>
+                        <div class="kpi-value" id="kpi-prazo-rate">0%</div>
+                        <div class="kpi-subtext">Finalizados / Ativos no prazo</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header"><span>TMA Real (Atribuição)</span><i class="fa-solid fa-stopwatch" style="color:var(--info)"></i></div>
+                        <div class="kpi-value" id="kpi-tma">0h</div>
+                        <div class="kpi-subtext">Tempo médio por servidor</div>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3><i class="fa-solid fa-chart-column"></i> Produtividade Semanal</h3>
+                        <div class="chart-container"><canvas id="weeklyChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3><i class="fa-solid fa-chart-pie"></i> Origem das Demandas</h3>
+                        <div class="chart-container"><canvas id="systemChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3><i class="fa-solid fa-business-time"></i> Cumprimento de Prazos (SLA)</h3>
+                        <div class="chart-container"><canvas id="prazoChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3><i class="fa-solid fa-user-check"></i> Distribuição por Servidor</h3>
+                        <div class="chart-container"><canvas id="userChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: DEMANDAS & PRAZOS -->
+            <div id="sec-processos" class="view-section">
+                <div class="card-block">
+                    <div class="card-header">
+                        <h3>Gestão de Demandas, Atribuição e Prazos Regimentais</h3>
+                        <button class="btn btn-accent admin-only" onclick="openProcessModal()">
+                            <i class="fa-solid fa-plus"></i> Registrar Nova Demanda
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Servidor</th>
+                                    <th>Origem</th>
+                                    <th>Protocolo / Ticket</th>
+                                    <th>Descrição da Demanda</th>
+                                    <th>Atribuído em</th>
+                                    <th>SLA Regimental</th>
+                                    <th>Status</th>
+                                    <th>Tempo Restante / SLA</th>
+                                    <th class="admin-only">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-processos"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: RELATÓRIO GERENCIAL -->
+            <div id="sec-relatorios" class="view-section">
+                <div class="card-block">
+                    <div class="card-header">
+                        <h3>Consolidado Gerencial de Produtividade da Equipe</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Servidor</th>
+                                    <th>Demandas Totais</th>
+                                    <th>SIPAC</th>
+                                    <th>SAGITTA</th>
+                                    <th>Concluídos</th>
+                                    <th>Em Andamento</th>
+                                    <th>Pendentes</th>
+                                    <th>Prazos Excedidos</th>
+                                    <th>Eficiência em SLA (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-report-summary"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 4: GESTÃO DE EQUIPE -->
+            <div id="sec-usuarios" class="view-section">
+                <div class="card-block">
+                    <div class="card-header">
+                        <h3>Equipe do CIAC</h3>
+                        <button class="btn btn-accent admin-only" onclick="openUserModal()">
+                            <i class="fa-solid fa-user-plus"></i> Novo Servidor
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nome Completo</th>
+                                    <th>E-mail</th>
+                                    <th>Perfil</th>
+                                    <th class="admin-only">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl-usuarios"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- MODAIS DE SISTEMA -->
+
+    <!-- LOGIN MODAL -->
+    <div class="modal-backdrop" id="modal-login">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Autenticação da Coordenadoria</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-login')" style="cursor:pointer"></i>
+            </div>
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label>Identificação de Acesso</label>
+                    <input type="text" id="login-user" required placeholder="Sua conta institucional">
+                </div>
+                <div class="form-group">
+                    <label>Senha de Acesso</label>
+                    <input type="password" id="login-pass" required placeholder="••••••••">
+                </div>
+                <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Autenticar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ALTERAÇÃO DE SENHA MODAL -->
+    <div class="modal-backdrop" id="modal-change-pass">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Alterar Senha da Coordenadoria</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-change-pass')" style="cursor:pointer"></i>
+            </div>
+            <form onsubmit="handleChangePassword(event)">
+                <div class="form-group">
+                    <label>Senha Atual</label>
+                    <input type="password" id="pass-current" required placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Nova Senha</label>
+                    <input type="password" id="pass-new" required placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Confirmar Nova Senha</label>
+                    <input type="password" id="pass-confirm" required placeholder="••••••••">
+                </div>
+                <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-change-pass')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Atualizar Senha</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- DEMANDA MODAL -->
+    <div class="modal-backdrop" id="modal-processo">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="lbl-modal-proc">Cadastrar Demanda</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-processo')" style="cursor:pointer"></i>
+            </div>
+            <form id="form-processo" onsubmit="saveProcess(event)">
+                <input type="hidden" id="proc-id">
+                <div class="form-group">
+                    <label>Servidor Responsável</label>
+                    <select id="proc-servidor" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Origem da Demanda</label>
+                    <select id="proc-sistema" required>
+                        <option value="SIPAC">SIPAC</option>
+                        <option value="SAGITTA">SAGITTA</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Número do Protocolo / Ticket</label>
+                    <input type="text" id="proc-protocolo" required placeholder="Ex: 23073.00123/2026-10 ou SGT-1234">
+                </div>
+                <div class="form-group">
+                    <label>Descrição Sucinta</label>
+                    <input type="text" id="proc-desc" required placeholder="Ex: Análise de Validação de Diploma">
+                </div>
+                <div class="form-group">
+                    <label>Data/Hora de Atribuição ao Servidor</label>
+                    <input type="datetime-local" id="proc-atribuicao" required>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <div class="form-group" style="flex:1">
+                        <label>Ano</label>
+                        <select id="proc-ano"></select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Mês</label>
+                        <select id="proc-mes"></select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Semana</label>
+                        <select id="proc-semana">
+                            <option value="1">1ª Sem</option>
+                            <option value="2">2ª Sem</option>
+                            <option value="3">3ª Sem</option>
+                            <option value="4">4ª Sem</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <div class="form-group" style="flex:1">
+                        <label>Prioridade / Prazo Regimental</label>
+                        <select id="proc-urgencia" required>
+                            <option value="Baixa">Baixa (168h / 7 dias)</option>
+                            <option value="Média" selected>Média (72h / 3 dias)</option>
+                            <option value="Alta">Alta (24 Horas)</option>
+                            <option value="Crítica">Crítica (4 Horas)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Status Atual</label>
+                        <select id="proc-status">
+                            <option value="Concluído">Concluído</option>
+                            <option value="Em Andamento" selected>Em Andamento</option>
+                            <option value="Pendente">Pendente</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-processo')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Salvar Demanda</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SERVIDOR MODAL -->
+    <div class="modal-backdrop" id="modal-usuario">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Cadastrar Servidor</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-usuario')" style="cursor:pointer"></i>
+            </div>
+            <form id="form-usuario" onsubmit="saveUser(event)">
+                <input type="hidden" id="usr-id">
+                <div class="form-group">
+                    <label>Nome Completo</label>
+                    <input type="text" id="usr-nome" required>
+                </div>
+                <div class="form-group">
+                    <label>E-mail Institucional</label>
+                    <input type="email" id="usr-email" required>
+                </div>
+                <div class="form-group">
+                    <label>Perfil de Acesso</label>
+                    <select id="usr-role">
+                        <option value="Servidor">Servidor</option>
+                        <option value="Coordenador">Coordenador</option>
+                    </select>
+                </div>
+                <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-usuario')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Salvar Servidor</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL CONFIRMAÇÃO -->
+    <div class="modal-backdrop" id="modal-confirm">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Confirmar Exclusão</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-confirm')" style="cursor:pointer"></i>
+            </div>
+            <p style="font-size: 13.5px; color: var(--text-muted);" id="lbl-confirm-msg">Confirma a remoção permanente do registro selecionado?</p>
+            <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modal-confirm')">Cancelar</button>
+                <button type="button" class="btn btn-accent" id="btn-confirm-action" style="background-color: var(--danger);">Excluir Registro</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const ANOS = Array.from({length: 11}, (_, i) => (2020 + i).toString());
+
+        /* TEMPOS REGIMENTAIS EM HORAS POR PRIORIDADE */
+        const TARGET_HOURS = { 'Baixa': 168, 'Média': 72, 'Alta': 24, 'Crítica': 4 };
+
+        /* ARMAZENAMENTO DAS CREDENCIAIS DO COORDENADOR */
+        let adminAuth = JSON.parse(localStorage.getItem('ciac_admin_auth')) || {
+            user: "admin",
+            pass: "admin"
+        };
+
+        /* DADOS INICIAIS */
+        let users = JSON.parse(localStorage.getItem('ciac_users')) || [
+            { id: 1, name: "Ana Souza", email: "ana.souza@ufpa.br", role: "Servidor" },
+            { id: 2, name: "Carlos Lima", email: "carlos.lima@ufpa.br", role: "Servidor" },
+            { id: 3, name: "Maria Oliveira", email: "maria.oliveira@ufpa.br", role: "Servidor" }
+        ];
+
+        function getRecentIsoDate(hoursAgo) {
+            const d = new Date();
+            d.setHours(d.getHours() - hoursAgo);
+            return d.toISOString().slice(0, 16);
+        }
+
+        let processes = JSON.parse(localStorage.getItem('ciac_processes')) || [
+            { id: 101, userId: 1, system: "SIPAC", protocol: "23073.00412/2026-01", desc: "Aproveitamento de Estudos", year: "2026", month: "Março", week: "1", priority: "Média", assignedAt: getRecentIsoDate(20), status: "Concluído" },
+            { id: 102, userId: 2, system: "SAGITTA", protocol: "SGT-88412", desc: "Atualização de Cadastros", year: "2026", month: "Março", week: "2", priority: "Alta", assignedAt: getRecentIsoDate(18), status: "Em Andamento" },
+            { id: 103, userId: 1, system: "SAGITTA", protocol: "SGT-88910", desc: "Emissão de Certidões", year: "2026", month: "Março", week: "3", priority: "Crítica", assignedAt: getRecentIsoDate(6), status: "Pendente" },
+            { id: 104, userId: 3, system: "SIPAC", protocol: "23073.00550/2026-02", desc: "Análise Curricular Especial", year: "2026", month: "Março", week: "2", priority: "Baixa", assignedAt: getRecentIsoDate(40), status: "Concluído" }
+        ];
+
+        let isCoordenador = JSON.parse(localStorage.getItem('ciac_is_admin')) || false;
+        let deleteTarget = { type: null, id: null };
+
+        /* INIT */
+        window.onload = () => {
+            saveToStorage();
+            initDateSelectors();
+            updateRoleUI();
+            populateDropdowns();
+            initCharts();
+            applyFilters();
+            
+            // FECHAR MODAIS VIA ESC
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+                }
+            });
+        };
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('mobile-open');
+        }
+
+        function saveToStorage() {
+            localStorage.setItem('ciac_users', JSON.stringify(users));
+            localStorage.setItem('ciac_processes', JSON.stringify(processes));
+            localStorage.setItem('ciac_is_admin', JSON.stringify(isCoordenador));
+            localStorage.setItem('ciac_admin_auth', JSON.stringify(adminAuth));
+        }
+
+        function initDateSelectors() {
+            const selAnoFilter = document.getElementById('filter-ano');
+            const selMesFilter = document.getElementById('filter-mes');
+            const selAnoProc = document.getElementById('proc-ano');
+            const selMesProc = document.getElementById('proc-mes');
+
+            selAnoFilter.innerHTML = '<option value="todos">Todos</option>';
+            ANOS.forEach(a => {
+                selAnoFilter.innerHTML += `<option value="${a}">${a}</option>`;
+                selAnoProc.innerHTML += `<option value="${a}">${a}</option>`;
+            });
+            selAnoFilter.value = "2026";
+            selAnoProc.value = "2026";
+
+            selMesFilter.innerHTML = '<option value="todos">Todos</option>';
+            MESES.forEach(m => {
+                selMesFilter.innerHTML += `<option value="${m}">${m}</option>`;
+                selMesProc.innerHTML += `<option value="${m}">${m}</option>`;
+            });
+            selMesFilter.value = "Março";
+            selMesProc.value = "Março";
+        }
+
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> <span>${msg}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3200);
+        }
+
+        /* PRAZOS REGIMENTAIS & SLA */
+        function getPrazoStatus(p) {
+            if (p.status === 'Concluído') {
+                return { label: 'Concluído no Prazo', class: 'prazo-ok', expired: false, remainingHours: 0 };
+            }
+
+            const limitHours = TARGET_HOURS[p.priority] || 72;
+            const assignedTime = new Date(p.assignedAt || Date.now()).getTime();
+            const nowTime = new Date().getTime();
+
+            const elapsedHours = (nowTime - assignedTime) / (1000 * 60 * 60);
+            const remainingHours = Math.round(limitHours - elapsedHours);
+
+            if (remainingHours < 0) {
+                return { 
+                    label: 'Prazo Excedido', 
+                    class: 'prazo-expired', 
+                    expired: true, 
+                    text: `${Math.abs(remainingHours)}h em atraso`,
+                    elapsedHours
+                };
+            } else if (remainingHours <= 24) {
+                return { 
+                    label: 'Atenção ao Prazo', 
+                    class: 'prazo-warn', 
+                    expired: false, 
+                    text: `${remainingHours}h restantes`,
+                    elapsedHours
+                };
+            } else {
+                return { 
+                    label: 'No Prazo', 
+                    class: 'prazo-ok', 
+                    expired: false, 
+                    text: `${remainingHours}h restantes`,
+                    elapsedHours
+                };
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'Não informada';
+            const d = new Date(dateString);
+            return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        }
+
+        /* AUTENTICAÇÃO E PERMISSÕES */
+        function openLoginModal() { document.getElementById('modal-login').style.display = 'flex'; }
+        function openChangePassModal() { document.getElementById('modal-change-pass').style.display = 'flex'; }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-user').value.trim();
+            const p = document.getElementById('login-pass').value.trim();
+
+            if (u === adminAuth.user && p === adminAuth.pass) {
+                isCoordenador = true;
+                saveToStorage();
+                updateRoleUI();
+                closeModal('modal-login');
+                showToast("Sessão autenticada como Coordenador.", "success");
+            } else {
+                showToast("Credenciais de acesso incorretas.", "danger");
+            }
+        }
+
+        function handleChangePassword(e) {
+            e.preventDefault();
+            const current = document.getElementById('pass-current').value.trim();
+            const newPass = document.getElementById('pass-new').value.trim();
+            const confirmPass = document.getElementById('pass-confirm').value.trim();
+
+            if (current !== adminAuth.pass) {
+                showToast("Senha atual incorreta.", "danger");
+                return;
+            }
+
+            if (newPass !== confirmPass) {
+                showToast("A nova senha e a confirmação não coincidem.", "danger");
+                return;
+            }
+
+            if (newPass.length < 4) {
+                showToast("A nova senha deve possuir pelo menos 4 caracteres.", "warning");
+                return;
+            }
+
+            adminAuth.pass = newPass;
+            saveToStorage();
+            closeModal('modal-change-pass');
+            showToast("Senha alterada com sucesso.", "success");
+            
+            document.getElementById('pass-current').value = '';
+            document.getElementById('pass-new').value = '';
+            document.getElementById('pass-confirm').value = '';
+        }
+
+        function handleLogout() {
+            isCoordenador = false;
+            saveToStorage();
+            updateRoleUI();
+            navigate('visao-geral');
+            showToast("Sessão encerrada.", "info");
+        }
+
+        function updateRoleUI() {
+            const badge = document.getElementById('user-role-badge');
+            const roleLbl = document.getElementById('lbl-user-role');
+            const btnLogin = document.getElementById('btn-login-trigger');
+            const btnLogout = document.getElementById('btn-logout-trigger');
+            const btnChangePass = document.getElementById('btn-change-pass');
+
+            if (isCoordenador) {
+                badge.className = 'role-badge admin';
+                roleLbl.innerText = 'Coordenador';
+                btnLogin.style.display = 'none';
+                btnLogout.style.display = 'flex';
+                btnChangePass.style.display = 'flex';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+            } else {
+                badge.className = 'role-badge visitor';
+                roleLbl.innerText = 'Modo Visitante';
+                btnLogin.style.display = 'flex';
+                btnLogout.style.display = 'none';
+                btnChangePass.style.display = 'none';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+            }
+        }
+
+        /* NAVEGAÇÃO VIA MENU */
+        function navigate(viewId, event) {
+            if (event) event.preventDefault();
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(`sec-${viewId}`).classList.add('active');
+            
+            // Ativa o link correspondente no menu
+            const targetLink = document.querySelector(`.nav-links a[onclick*="'${viewId}'"]`);
+            if (targetLink) targetLink.parentElement.classList.add('active');
+
+            const titles = {
+                'visao-geral': 'Painel Geral de Desempenho',
+                'processos': 'Gestão de Demandas e Prazos',
+                'relatorios': 'Relatório Gerencial de Produtividade',
+                'usuarios': 'Gestão de Servidores'
+            };
+            document.getElementById('page-title').innerText = titles[viewId];
+            if (viewId === 'relatorios') renderReportSummary();
+            
+            // Fecha sidebar em telas menores ao navegar
+            document.getElementById('sidebar').classList.remove('mobile-open');
+        }
+
+        function populateDropdowns() {
+            const selectFilter = document.getElementById('filter-servidor');
+            const selectProc = document.getElementById('proc-servidor');
+
+            selectFilter.innerHTML = '<option value="todos">Todos</option>';
+            selectProc.innerHTML = '';
+
+            users.forEach(u => {
+                selectFilter.innerHTML += `<option value="${u.id}">${u.name}</option>`;
+                selectProc.innerHTML += `<option value="${u.id}">${u.name}</option>`;
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('search-global').value = '';
+            document.getElementById('filter-servidor').value = 'todos';
+            document.getElementById('filter-origem').value = 'todos';
+            document.getElementById('filter-ano').value = 'todos';
+            document.getElementById('filter-mes').value = 'todos';
+            document.getElementById('filter-semana').value = 'todos';
+            document.getElementById('filter-status').value = 'todos';
+            document.getElementById('filter-prazo').value = 'todos';
+            applyFilters();
+            showToast("Filtros redefinidos.", "info");
+        }
+
+        /* FILTROS E MÉTRICAS */
+        function applyFilters() {
+            const query = document.getElementById('search-global').value.toLowerCase();
+            const sVal = document.getElementById('filter-servidor').value;
+            const oVal = document.getElementById('filter-origem').value;
+            const aVal = document.getElementById('filter-ano').value;
+            const mVal = document.getElementById('filter-mes').value;
+            const wVal = document.getElementById('filter-semana').value;
+            const stVal = document.getElementById('filter-status').value;
+            const prazoVal = document.getElementById('filter-prazo').value;
+
+            const filtered = processes.filter(p => {
+                const u = users.find(usr => usr.id == p.userId) || { name: 'Desconhecido' };
+                const prazo = getPrazoStatus(p);
+
+                const matchQuery = p.protocol.toLowerCase().includes(query) || p.desc.toLowerCase().includes(query) || u.name.toLowerCase().includes(query);
+                const matchS = (sVal === 'todos' || p.userId == sVal);
+                const matchO = (oVal === 'todos' || p.system === oVal);
+                const matchA = (aVal === 'todos' || p.year == aVal);
+                const matchM = (mVal === 'todos' || p.month == mVal);
+                const matchW = (wVal === 'todos' || p.week == wVal);
+                const matchSt = (stVal === 'todos' || p.status === stVal);
+
+                let matchPrazo = true;
+                if (prazoVal === 'OK') matchPrazo = !prazo.expired && prazo.label.includes('Prazo');
+                if (prazoVal === 'Atenção') matchPrazo = prazo.label === 'Atenção ao Prazo';
+                if (prazoVal === 'Excedido') matchPrazo = prazo.expired;
+
+                return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
+            });
+
+            updateMetrics(filtered);
+            renderProcessTable(filtered);
+            renderUserTable();
+            renderReportSummary();
+        }
+
+        function updateMetrics(data) {
+            const total = data.length;
+            const concluidos = data.filter(p => p.status === 'Concluído').length;
+            const andamento = data.filter(p => p.status === 'Em Andamento').length;
+            const pendentes = data.filter(p => p.status === 'Pendente').length;
+            
+            const prazosExcedidos = data.filter(p => getPrazoStatus(p).expired).length;
+            const prazoRate = total > 0 ? Math.round(((total - prazosExcedidos) / total) * 100) : 100;
+            const concluidosRate = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+
+            let totalHoursElapsed = 0;
+            data.forEach(p => {
+                const prazo = getPrazoStatus(p);
+                totalHoursElapsed += (prazo.elapsedHours || 12);
+            });
+            const tma = total > 0 ? Math.round(totalHoursElapsed / total) : 0;
+
+            document.getElementById('kpi-total').innerText = total;
+            document.getElementById('kpi-concluidos').innerText = concluidos;
+            document.getElementById('kpi-concluidos-rate').innerText = `${concluidosRate}% de resolutividade`;
+            document.getElementById('kpi-andamento').innerText = andamento;
+            document.getElementById('kpi-pendentes').innerText = pendentes;
+            document.getElementById('kpi-prazo-rate').innerText = `${prazoRate}%`;
+            document.getElementById('kpi-tma').innerText = `${tma}h`;
+
+            updateCharts(data);
+        }
+
+        /* GRÁFICOS INTERATIVOS */
+        let cBarWeek, cPieSystem, cPiePrazo, cBarUser;
+
+        function initCharts() {
+            cBarWeek = new Chart(document.getElementById('weeklyChart').getContext('2d'), {
+                type: 'bar',
+                data: { labels: ['1ª Sem', '2ª Sem', '3ª Sem', '4ª Sem'], datasets: [{ label: 'Atendimentos', data: [0,0,0,0], backgroundColor: '#1e3a8a' }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            cPieSystem = new Chart(document.getElementById('systemChart').getContext('2d'), {
+                type: 'doughnut',
+                data: { labels: ['SIPAC', 'SAGITTA'], datasets: [{ data: [0,0], backgroundColor: ['#0369a1', '#b45309'] }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            cPiePrazo = new Chart(document.getElementById('prazoChart').getContext('2d'), {
+                type: 'pie',
+                data: { labels: ['No Prazo', 'Atenção', 'Excedido'], datasets: [{ data: [0,0,0], backgroundColor: ['#059669', '#d97706', '#dc2626'] }] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            cBarUser = new Chart(document.getElementById('userChart').getContext('2d'), {
+                type: 'bar',
+                data: { labels: [], datasets: [{ label: 'Demandas', data: [], backgroundColor: '#2563eb' }] },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function updateCharts(data) {
+            cBarWeek.data.datasets[0].data = [1, 2, 3, 4].map(w => data.filter(p => p.week == w).length);
+            cBarWeek.update();
+
+            cPieSystem.data.datasets[0].data = [
+                data.filter(p => p.system === 'SIPAC').length,
+                data.filter(p => p.system === 'SAGITTA').length
+            ];
+            cPieSystem.update();
+
+            const okCount = data.filter(p => { const s = getPrazoStatus(p); return !s.expired && s.label !== 'Atenção ao Prazo'; }).length;
+            const warnCount = data.filter(p => getPrazoStatus(p).label === 'Atenção ao Prazo').length;
+            const expiredCount = data.filter(p => getPrazoStatus(p).expired).length;
+
+            cPiePrazo.data.datasets[0].data = [okCount, warnCount, expiredCount];
+            cPiePrazo.update();
+
+            cBarUser.data.labels = users.map(u => u.name);
+            cBarUser.data.datasets[0].data = users.map(u => data.filter(p => p.userId == u.id).length);
+            cBarUser.update();
+        }
+
+        /* TABELAS E AÇÕES DADOS */
+        function getStatusBadge(status) {
+            if (status === 'Concluído') return 'badge-success';
+            if (status === 'Em Andamento') return 'badge-warning';
+            return 'badge-danger';
+        }
+
+        function renderProcessTable(data) {
+            const tbody = document.getElementById('tbl-processos');
+            tbody.innerHTML = '';
+
+            data.forEach(p => {
+                const u = users.find(usr => usr.id == p.userId) || { name: 'Não Atribuído' };
+                const prazo = getPrazoStatus(p);
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${u.name}</strong></td>
+                        <td><span class="badge ${p.system === 'SIPAC' ? 'badge-sipac' : 'badge-sagitta'}">${p.system}</span></td>
+                        <td>${p.protocol}</td>
+                        <td>${p.desc}</td>
+                        <td><small>${formatDate(p.assignedAt)}</small></td>
+                        <td><strong>${p.priority || 'Média'}</strong></td>
+                        <td><span class="badge ${getStatusBadge(p.status)}">${p.status}</span></td>
+                        <td><span class="badge ${prazo.class}">${prazo.label} ${prazo.text ? `(${prazo.text})` : ''}</span></td>
+                        <td class="admin-only">
+                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${p.id})"></i>
+                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${p.id})"></i>
+                        </td>
+                    </tr>
+                `;
+            });
+            updateRoleUI();
+        }
+
+        function renderUserTable() {
+            const tbody = document.getElementById('tbl-usuarios');
+            tbody.innerHTML = '';
+
+            users.forEach(u => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${u.name}</strong></td>
+                        <td>${u.email}</td>
+                        <td><span class="badge ${u.role === 'Coordenador' ? 'badge-sipac' : 'badge-sagitta'}">${u.role}</span></td>
+                        <td class="admin-only">
+                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editUser(${u.id})"></i>
+                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('user', ${u.id})"></i>
+                        </td>
+                    </tr>
+                `;
+            });
+            updateRoleUI();
+        }
+
+        function renderReportSummary() {
+            const tbody = document.getElementById('tbl-report-summary');
+            tbody.innerHTML = '';
+
+            users.forEach(u => {
+                const uProcs = processes.filter(p => p.userId == u.id);
+                const total = uProcs.length;
+                const sipac = uProcs.filter(p => p.system === 'SIPAC').length;
+                const sagitta = uProcs.filter(p => p.system === 'SAGITTA').length;
+                const concluidos = uProcs.filter(p => p.status === 'Concluído').length;
+                const emAndamento = uProcs.filter(p => p.status === 'Em Andamento').length;
+                const pendentes = uProcs.filter(p => p.status === 'Pendente').length;
+                const prazosExcedidos = uProcs.filter(p => getPrazoStatus(p).expired).length;
+                const prazoRate = total > 0 ? Math.round(((total - prazosExcedidos) / total) * 100) : 100;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${u.name}</strong></td>
+                        <td>${total}</td>
+                        <td>${sipac}</td>
+                        <td>${sagitta}</td>
+                        <td>${concluidos}</td>
+                        <td>${emAndamento}</td>
+                        <td>${pendentes}</td>
+                        <td style="color:${prazosExcedidos > 0 ? 'var(--danger)' : 'inherit'}; font-weight:800;">${prazosExcedidos}</td>
+                        <td><strong>${prazoRate}%</strong></td>
+                    </tr>
+                `;
+            });
+        }
+
+        function saveProcess(e) {
+            e.preventDefault();
+            const id = document.getElementById('proc-id').value;
+            const procData = {
+                id: id ? parseInt(id) : Date.now(),
+                userId: parseInt(document.getElementById('proc-servidor').value),
+                system: document.getElementById('proc-sistema').value,
+                protocol: document.getElementById('proc-protocolo').value,
+                desc: document.getElementById('proc-desc').value,
+                assignedAt: document.getElementById('proc-atribuicao').value,
+                year: document.getElementById('proc-ano').value,
+                month: document.getElementById('proc-mes').value,
+                week: document.getElementById('proc-semana').value,
+                priority: document.getElementById('proc-urgencia').value,
+                status: document.getElementById('proc-status').value
+            };
+
+            if (id) {
+                const idx = processes.findIndex(p => p.id == id);
+                processes[idx] = procData;
+                showToast("Demanda atualizada com sucesso.", "success");
+            } else {
+                processes.push(procData);
+                showToast("Nova demanda atribuída com sucesso.", "success");
+            }
+
+            saveToStorage();
+            closeModal('modal-processo');
+            applyFilters();
+        }
+
+        function editProcess(id) {
+            const proc = processes.find(p => p.id === id);
+            if (!proc) return;
+
+            document.getElementById('proc-id').value = proc.id;
+            document.getElementById('proc-servidor').value = proc.userId;
+            document.getElementById('proc-sistema').value = proc.system;
+            document.getElementById('proc-protocolo').value = proc.protocol;
+            document.getElementById('proc-desc').value = proc.desc;
+            document.getElementById('proc-atribuicao').value = proc.assignedAt || new Date().toISOString().slice(0,16);
+            document.getElementById('proc-ano').value = proc.year;
+            document.getElementById('proc-mes').value = proc.month;
+            document.getElementById('proc-semana').value = proc.week;
+            document.getElementById('proc-urgencia').value = proc.priority || 'Média';
+            document.getElementById('proc-status').value = proc.status;
+
+            document.getElementById('lbl-modal-proc').innerText = "Editar Demanda";
+            document.getElementById('modal-processo').style.display = 'flex';
+        }
+
+        function saveUser(e) {
+            e.preventDefault();
+            const id = document.getElementById('usr-id').value;
+            const userData = {
+                id: id ? parseInt(id) : Date.now(),
+                name: document.getElementById('usr-nome').value,
+                email: document.getElementById('usr-email').value,
+                role: document.getElementById('usr-role').value
+            };
+
+            if (id) {
+                const idx = users.findIndex(u => u.id == id);
+                users[idx] = userData;
+                showToast("Dados do servidor atualizados.", "success");
+            } else {
+                users.push(userData);
+                showToast("Novo servidor cadastrado.", "success");
+            }
+
+            saveToStorage();
+            closeModal('modal-usuario');
+            populateDropdowns();
+            applyFilters();
+        }
+
+        function editUser(id) {
+            const usr = users.find(u => u.id === id);
+            if (!usr) return;
+
+            document.getElementById('usr-id').value = usr.id;
+            document.getElementById('usr-nome').value = usr.name;
+            document.getElementById('usr-email').value = usr.email;
+            document.getElementById('usr-role').value = usr.role;
+
+            document.getElementById('modal-usuario').style.display = 'flex';
+        }
+
+        /* EXCLUSÃO COM VALIDAÇÃO DE INTEGRIDADE */
+        function confirmDelete(type, id) {
+            deleteTarget = { type, id };
+            const msgLbl = document.getElementById('lbl-confirm-msg');
+            
+            if (type === 'user') {
+                const userProcs = processes.filter(p => p.userId == id).length;
+                if (userProcs > 0) {
+                    msgLbl.innerText = `Este servidor possui ${userProcs} demanda(s) vinculada(s). Ao excluir, o vínculo dessas demandas será alterado para "Não Atribuído". Deseja prosseguir?`;
+                } else {
+                    msgLbl.innerText = "Confirma a remoção permanente deste servidor?";
+                }
+            } else {
+                msgLbl.innerText = "Confirma a remoção permanente desta demanda do sistema?";
+            }
+
+            document.getElementById('btn-confirm-action').onclick = executeDelete;
+            document.getElementById('modal-confirm').style.display = 'flex';
+        }
+
+        function executeDelete() {
+            if (deleteTarget.type === 'process') {
+                processes = processes.filter(p => p.id !== deleteTarget.id);
+                showToast("Demanda removida do sistema.", "danger");
+            } else if (deleteTarget.type === 'user') {
+                // Desvincula processos associados antes de deletar o usuário
+                processes.forEach(p => {
+                    if (p.userId == deleteTarget.id) p.userId = 0;
+                });
+                users = users.filter(u => u.id !== deleteTarget.id);
+                showToast("Servidor removido do cadastro.", "danger");
+            }
+            saveToStorage();
+            closeModal('modal-confirm');
+            populateDropdowns();
+            applyFilters();
+        }
+
+        function openProcessModal() {
+            document.getElementById('form-processo').reset();
+            document.getElementById('proc-id').value = '';
+            document.getElementById('proc-atribuicao').value = new Date().toISOString().slice(0, 16);
+            document.getElementById('lbl-modal-proc').innerText = "Cadastrar Demanda";
+            document.getElementById('modal-processo').style.display = 'flex';
+        }
+
+        function openUserModal() {
+            document.getElementById('form-usuario').reset();
+            document.getElementById('usr-id').value = '';
+            document.getElementById('modal-usuario').style.display = 'flex';
+        }
+
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function exportCSV() {
+            let csv = 'Servidor;Origem;Protocolo;Descricao;Data_Atribuicao;SLA_Prioridade;Ano;Mes;Semana;Status;Situacao_SLA\n';
+            processes.forEach(p => {
+                const u = users.find(usr => usr.id == p.userId) || { name: 'Indefinido' };
+                const prazo = getPrazoStatus(p);
+                csv += `"${u.name}";"${p.system}";"${p.protocol}";"${p.desc}";"${formatDate(p.assignedAt)}";"${p.priority}";"${p.year}";"${p.month}";"${p.week}";"${p.status}";"${prazo.label}"\n`;
+            });
+
+            // \ufeff Adiciona o BOM UTF-8 para garantir acentuação correta no Excel
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `relatorio_executivo_ciac_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            showToast("Relatório CSV exportado com sucesso.", "success");
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            document.getElementById('theme-icon').className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        }
+    </script>
+</body>
+</html>
