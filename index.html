@@ -1452,7 +1452,15 @@
                 btnLogin.style.display = 'flex'; btnLogout.style.display = 'none'; btnChangePass.style.display = 'none';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
             }
-            renderProcessTable(getCurrentVisibleProcesses());
+            /*
+             * REGRA PERMANENTE DE FILTROS — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
+             * updateRoleUI() NÃO deve renderizar novamente a tabela de demandas.
+             * applyFilters() é o único responsável por aplicar o recorte atual.
+             * Renderizar a lista completa aqui fazia os filtros serem imediatamente
+             * sobrescritos por renderUserTable() -> updateRoleUI().
+             * Manter esta separação para preservar busca, servidor, origem, ano,
+             * mês, semana, status e situação de prazo.
+             */
         }
 
         /* NAVEGAÇÃO VIA MENU */
@@ -2244,6 +2252,16 @@
             console.info('CAC — diagnóstico de permissão', info);
             return info;
         };
+
+        /*
+         * CONTRATO DE MANUTENÇÃO — NÃO ALTERAR O RESTANTE DO SISTEMA.
+         * Esta versão é uma correção cirúrgica dos filtros.
+         * Manter intactos: Firebase/Auth, onSnapshot, sincronização em tempo real,
+         * permissões, visitantes, ações de Coordenador, prazos, dashboard, relatórios,
+         * auditoria, layout e demais funcionalidades já validadas.
+         * Futuras alterações devem ser feitas somente mediante solicitação expressa
+         * e sem substituir a fonte Firestore por armazenamento local.
+         */
 
         /*
          * REGRA PERMANENTE DE VISUALIZAÇÃO — NÃO REMOVER.
