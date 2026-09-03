@@ -551,6 +551,20 @@
             .print-header { display: block; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
             .print-header h2 { font-size: 18px; text-transform: uppercase; font-weight: 800; }
         }
+            .icon-action-btn{
+            border:0;
+            background:transparent;
+            padding:4px 6px;
+            margin-right:6px;
+            cursor:pointer;
+            font-size:14px;
+            line-height:1;
+        }
+        .icon-action-btn:hover{transform:scale(1.08);}
+        .edit-process-btn{color:var(--accent);}
+        .delete-process-btn{color:var(--danger);}
+        .process-actions{white-space:nowrap;}
+
     </style>
 </head>
 <body>
@@ -1376,11 +1390,11 @@
         }
 
         function canEditProcess(p) {
-            return !!p && requireCoordinator('alterar demandas');
+            return !!p && isCurrentUserCoordinator();
         }
 
         function canDeleteProcess(p) {
-            return !!p && requireCoordinator('excluir demandas');
+            return !!p && isCurrentUserCoordinator();
         }
 
         function updateRoleUI() {
@@ -1473,6 +1487,9 @@
             const stVal = document.getElementById('filter-status').value;
             const prazoVal = document.getElementById('filter-prazo').value;
 
+            // A tabela respeita os filtros; o Painel Principal usa SEMPRE a coleção
+            // completa recebida do Firestore. Assim, um filtro não pode "sumir"
+            // com uma demanda do total executivo.
             const filtered = processes.filter(p => {
                 const u = users.find(usr => usr.id == p.userId) || { name: 'Desconhecido' };
                 const prazo = getPrazoStatus(p);
@@ -1493,7 +1510,7 @@
                 return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
             });
 
-            updateMetrics(filtered);
+            updateMetrics(processes);
             renderProcessTable(filtered);
             renderUserTable();
             renderReportSummary();
@@ -1598,6 +1615,11 @@
             cBarUser.update();
         }
 
+        // ===== CORREÇÃO V6 — AÇÕES DE DEMANDAS =====
+        // Alterar/excluir não dependem mais de onclick inline.
+        // O ID do documento é transportado por data-id e tratado por delegação de eventos.
+        // O Painel Principal calcula os indicadores usando TODOS os documentos recebidos.
+
         /* TABELAS E AÇÕES DADOS */
         function getStatusBadge(status) {
             if (status === 'Concluído') return 'badge-success';
@@ -1607,51 +1629,118 @@
 
         function renderProcessTable(data) {
             const tbody = document.getElementById('tbl-processos');
-            tbody.innerHTML = '';
+            if (!tbody) return;
 
-            data.forEach(p => {
-                const u = users.find(usr => usr.id == p.userId) || { name: 'Não Atribuído' };
+            // Não usar onclick inline com IDs do Firestore.
+            // IDs são strings e podem conter caracteres que quebram atributos HTML.
+            // Os botões usam data-* + delegação de eventos abaixo.
+            const rows = data.map(p => {
+                const u = users.find(usr => normalizeId(usr.id) === normalizeId(p.userId)) || { name: 'Não Atribuído' };
                 const prazo = getPrazoStatus(p);
+                const id = normalizeId(p.id);
 
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${u.name}</strong></td>
-                        <td><span class="badge ${p.system === 'SIPAC' ? 'badge-sipac' : 'badge-sagitta'}">${p.system}</span></td>
-                        <td>${p.protocol}</td>
-                        <td>${p.desc}</td>
-                        <td><small>${formatDate(p.assignedAt)}</small></td>
-                        <td><strong>${p.priority || 'Média'}</strong></td>
-                        <td><span class="badge ${getStatusBadge(p.status)}">${p.status}</span></td>
-                        <td><span class="badge ${prazo.class}">${prazo.label} ${prazo.text ? `(${prazo.text})` : ''}</span></td>
+                return `
+                    <tr data-process-row="${escapeHtml(id)}">
+                        <td><strong>${escapeHtml(u.name)}</strong></td>
+                        <td><span class="badge ${p.system === 'SIPAC' ? 'badge-sipac' : 'badge-sagitta'}">${escapeHtml(p.system || '—')}</span></td>
+                        <td>${escapeHtml(p.protocol || '—')}</td>
+                        <td>${escapeHtml(p.desc || '—')}</td>
+                        <td><small>${escapeHtml(formatDate(p.assignedAt))}</small></td>
+                        <td><strong>${escapeHtml(p.priority || 'Média')}</strong></td>
+                        <td><span class="badge ${getStatusBadge(p.status)}">${escapeHtml(p.status || 'Pendente')}</span></td>
+                        <td><span class="badge ${prazo.class}">${escapeHtml(prazo.label)} ${prazo.text ? `(${escapeHtml(prazo.text)})` : ''}</span></td>
                         <td class="process-actions">
-                            ${canEditProcess(p) ? `<i class="fa-solid fa-pen-to-square" title="Alterar demanda" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${JSON.stringify(p.id)})"></i>` : ''}
-                            ${canDeleteProcess(p) ? `<i class="fa-solid fa-trash" title="Excluir demanda" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${JSON.stringify(p.id)})"></i>` : ''}
-                            ${!canEditProcess(p) ? '<span style="color:var(--text-muted);font-size:11px;">Somente leitura</span>' : ''}
+                            <button type="button" class="icon-action-btn edit-process-btn" data-process-action="edit" data-id="${escapeHtml(id)}" title="Alterar demanda" aria-label="Alterar demanda">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button type="button" class="icon-action-btn delete-process-btn" data-process-action="delete" data-id="${escapeHtml(id)}" title="Excluir demanda" aria-label="Excluir demanda">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
                 `;
-            });
+            }).join('');
+
+            tbody.innerHTML = rows || '<tr><td colspan="9" class="empty-state">Nenhuma demanda encontrada.</td></tr>';
         }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Ações da tabela: um único listener, sem onclick inline.
+        // Isso elimina definitivamente o problema de IDs do Firestore dentro do HTML.
+        document.addEventListener('click', function(event) {
+            const button = event.target.closest('[data-process-action]');
+            if (!button) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const id = button.getAttribute('data-id') || '';
+            const action = button.getAttribute('data-process-action');
+
+            if (!id) {
+                showToast('Identificador da demanda não encontrado.', 'danger');
+                return;
+            }
+
+            if (action === 'edit') {
+                editProcess(id);
+            } else if (action === 'delete') {
+                confirmDelete('process', id);
+            }
+        });
 
         function renderUserTable() {
             const tbody = document.getElementById('tbl-usuarios');
+            if (!tbody) return;
             tbody.innerHTML = '';
 
             users.forEach(u => {
+                const id = normalizeId(u.id);
                 tbody.innerHTML += `
                     <tr>
-                        <td><strong>${u.name}</strong></td>
-                        <td>${u.email}</td>
-                        <td><span class="badge ${u.role === 'Coordenador' ? 'badge-sipac' : 'badge-sagitta'}">${u.role}</span></td>
+                        <td><strong>${escapeHtml(u.name)}</strong></td>
+                        <td>${escapeHtml(u.email)}</td>
+                        <td><span class="badge ${u.role === 'Coordenador' ? 'badge-sipac' : 'badge-sagitta'}">${escapeHtml(u.role)}</span></td>
                         <td class="admin-only">
-                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editUser(${JSON.stringify(u.id)})"></i>
-                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('user', ${JSON.stringify(u.id)})"></i>
+                            <button type="button" class="icon-action-btn" data-user-action="edit" data-id="${escapeHtml(id)}" title="Alterar servidor" aria-label="Alterar servidor">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button type="button" class="icon-action-btn delete-process-btn" data-user-action="delete" data-id="${escapeHtml(id)}" title="Excluir servidor" aria-label="Excluir servidor">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
                 `;
             });
             updateRoleUI();
         }
+
+        document.addEventListener('click', function(event) {
+            const button = event.target.closest('[data-user-action]');
+            if (!button) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const id = button.getAttribute('data-id') || '';
+            const action = button.getAttribute('data-user-action');
+
+            if (!id) {
+                showToast('Identificador do servidor não encontrado.', 'danger');
+                return;
+            }
+
+            if (action === 'edit') editUser(id);
+            if (action === 'delete') confirmDelete('user', id);
+        });
 
         function renderReportSummary() {
             const tbody = document.getElementById('tbl-report-summary');
@@ -1699,7 +1788,10 @@
             e.preventDefault();
             const id = document.getElementById('proc-id').value;
             const existing = id ? processes.find(p => normalizeId(p.id) === normalizeId(id)) : null;
-            if (!requireCoordinator('criar ou alterar demandas')) return;
+            if (!isCurrentUserCoordinator()) {
+                showToast('Somente Coordenadores podem criar ou alterar demandas.', 'danger');
+                return;
+            }
             const procData = {
                 userId: normalizeId(document.getElementById('proc-servidor').value),
                 authUid: users.find(u => normalizeId(u.id) === normalizeId(document.getElementById('proc-servidor').value))?.authUid || normalizeId(document.getElementById('proc-servidor').value),
@@ -1737,7 +1829,7 @@
         function editProcess(id) {
             const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
             if (!proc) return;
-            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar demandas.", "danger");
+            if (!isCurrentUserCoordinator()) return showToast("Somente Coordenadores podem alterar demandas.", "danger");
 
             document.getElementById('proc-id').value = proc.id;
             document.getElementById('proc-servidor').value = proc.userId;
