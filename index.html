@@ -516,6 +516,9 @@
         .progress-track{height:7px;background:var(--bg-main);border-radius:99px;overflow:hidden;margin-top:8px}.progress-fill{height:100%;border-radius:99px;background:var(--accent);transition:width .3s ease}
         @media(max-width:1024px){.executive-strip{grid-template-columns:1fr 1fr}}@media(max-width:768px){.executive-strip{grid-template-columns:1fr}}
 
+
+        .audit-action{font-weight:800;font-size:11px}.audit-detail{color:var(--text-muted);font-size:12px;max-width:520px}.empty-state{padding:28px;text-align:center;color:var(--text-muted);font-size:13px}.insight-card{min-height:128px}
+
         /* RESPONSIVIDADE */
         @media (max-width: 1024px) {
             .charts-grid { grid-template-columns: 1fr; }
@@ -566,10 +569,11 @@
                 <li><a href="#" onclick="navigate('processos', event)"><i class="fa-solid fa-list-check"></i> Demandas & Prazos</a></li>
                 <li><a href="#" onclick="navigate('relatorios', event)"><i class="fa-solid fa-file-invoice"></i> Relatório Gerencial</a></li>
                 <li class="admin-only"><a href="#" onclick="navigate('usuarios', event)"><i class="fa-solid fa-users"></i> Gestão de Servidores</a></li>
+                <li class="admin-only"><a href="#" onclick="navigate('auditoria', event)"><i class="fa-solid fa-clock-rotate-left"></i> Auditoria</a></li>
             </ul>
         </div>
         <div style="font-size: 11px; color: var(--text-muted); padding-top: 14px; border-top: 1px solid var(--border);">
-            <p><strong>CAC Management 2.1</strong></p>
+            <p><strong>CAC Management 3.0</strong></p>
             <p>Controle Avançado de Produtividade</p>
         </div>
     </aside>
@@ -743,6 +747,10 @@
                         <div class="insight-main" id="insight-top-user">—</div>
                         <div class="insight-detail" id="insight-top-user-detail">Sem dados suficientes para o ranking.</div>
                     </div>
+                    <div class="insight-card"><h3><i class="fa-solid fa-scale-balanced"></i> Equilíbrio de Carga</h3>
+                        <div class="insight-main" id="insight-workload">—</div>
+                        <div class="insight-detail" id="insight-workload-detail">Analisando distribuição das demandas.</div>
+                    </div>
                 </div>
             </div>
 
@@ -828,6 +836,24 @@
                 </div>
             </div>
 
+            <!-- SECTION 5: AUDITORIA -->
+            <div id="sec-auditoria" class="view-section">
+                <div class="card-block">
+                    <div class="card-header">
+                        <div>
+                            <h3>Histórico de Auditoria</h3>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Registra alterações feitas na operação e administração.</div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead><tr><th>Data/Hora</th><th>Ação</th><th>Área</th><th>Responsável</th><th>Detalhes</th></tr></thead>
+                            <tbody id="tbl-auditoria"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
 
@@ -843,11 +869,12 @@
             <form onsubmit="handleLogin(event)">
                 <div class="form-group">
                     <label>Identificação de Acesso</label>
-                    <input type="text" id="login-user" required placeholder="Sua conta institucional">
+                    <input type="text" id="login-user" required placeholder="admin ou e-mail cadastrado no Firebase">
                 </div>
                 <div class="form-group">
                     <label>Senha de Acesso</label>
                     <input type="password" id="login-pass" required placeholder="••••••••">
+                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:4px;">A identificação <strong>admin</strong> aponta para a conta administrativa configurada no Firebase. O Firebase Authentication exige senha com no mínimo 6 caracteres; por isso, a senha literal <strong>admin</strong> não pode ser criada como senha do Firebase. Use a senha atualmente cadastrada ou redefina-a por <strong>Esqueci a senha</strong>.</div>
                 </div>
                 <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
@@ -1027,6 +1054,27 @@
         let currentUser = null;
         let deleteTarget = { type: null, id: null };
         let firebaseReady = false;
+        let auditLogs = [];
+        let unsubConfig = null;
+        let unsubAudit = null;
+
+        /*
+         * CAC FIREBASE SYNC CONTRACT — NÃO REMOVER.
+         * Regra permanente para futuras manutenções deste HTML:
+         * 1) Dados operacionais devem viver no Firestore, nunca em localStorage/sessionStorage/indexedDB.
+         * 2) Toda coleção que afeta o sistema deve usar onSnapshot para atualização em tempo real.
+         * 3) Toda gravação deve usar addDoc/updateDoc/setDoc/deleteDoc no Firestore.
+         * 4) Alterações administrativas e de configuração também devem ser sincronizadas.
+         * 5) A interface é apenas uma visão do Firestore; não deve criar uma "fonte local" paralela.
+         */
+        window.CAC_SYNC_CONTRACT = Object.freeze({
+            enabled: true,
+            realtime: true,
+            sourceOfTruth: 'firestore',
+            persistence: 'firestore-only',
+            collections: ['processos', 'servidores', 'config', 'auditoria']
+        });
+        const CAC_SYNC_CONTRACT = window.CAC_SYNC_CONTRACT;
 
         // Sincronização continua ativa em segundo plano; o indicador Online/Offline não é exibido.
         function setSyncStatus(status, message) {
@@ -1178,6 +1226,7 @@
                 const credential = EmailAuthProvider.credential(currentUser.email, current);
                 await reauthenticateWithCredential(currentUser, credential);
                 await updatePassword(currentUser, newPass);
+                await writeAudit('ALTERAÇÃO DE SENHA', 'Autenticação', { conta: currentUser.email });
                 closeModal('modal-change-pass');
                 ['pass-current','pass-new','pass-confirm'].forEach(id => document.getElementById(id).value = '');
                 showToast("Senha alterada com sucesso em todos os dispositivos.", "success");
@@ -1230,10 +1279,11 @@
                 'visao-geral': 'Painel Geral de Desempenho',
                 'processos': 'Gestão de Demandas e Prazos',
                 'relatorios': 'Relatório Gerencial de Produtividade',
-                'usuarios': 'Gestão de Servidores'
+                'usuarios': 'Gestão de Servidores', 'auditoria': 'Auditoria do Sistema'
             };
             document.getElementById('page-title').innerText = titles[viewId];
             if (viewId === 'relatorios') renderReportSummary();
+            if (viewId === 'auditoria') renderAuditTable();
             
             document.getElementById('sidebar').classList.remove('mobile-open');
         }
@@ -1348,6 +1398,12 @@
             const ranking=users.map(u=>{const rows=data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)),done=rows.filter(p=>p.status==='Concluído').length;
                 return {name:u.name,total:rows.length,done,rate:rows.length?Math.round(done/rows.length*100):0};}).filter(x=>x.total).sort((a,b)=>b.rate-a.rate||b.done-a.done||b.total-a.total);
             if(top&&topD){if(ranking.length){top.textContent=ranking[0].name;topD.textContent=`${ranking[0].rate}% de resolutividade · ${ranking[0].done} concluída(s) em ${ranking[0].total} demanda(s).`;}else{top.textContent='—';topD.textContent='Sem dados suficientes para o ranking.';}}
+            const workloadEl=document.getElementById('insight-workload'), workloadD=document.getElementById('insight-workload-detail');
+            const loads=users.map(u=>({name:u.name,total:data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)&&p.status!=='Concluído').length})).filter(x=>x.total>0);
+            if(workloadEl&&workloadD){
+                if(!loads.length){workloadEl.textContent='Equilibrada';workloadD.textContent='Nenhuma demanda ativa registrada.';}
+                else {const max=Math.max(...loads.map(x=>x.total)),min=Math.min(...loads.map(x=>x.total)),busiest=loads.slice().sort((a,b)=>b.total-a.total)[0];workloadEl.textContent=(max-min<=1?'Equilibrada':'Revisar distribuição');workloadD.textContent=`${busiest.name} concentra ${busiest.total} demanda(s) ativa(s).`; }
+            }
         }
 
         /* GRÁFICOS INTERATIVOS */
@@ -1487,6 +1543,17 @@
             });
         }
 
+        async function writeAudit(action, area, details = {}) {
+            if (!window.db || !currentUser) return;
+            try {
+                await addDoc(collection(window.db, 'auditoria'), {
+                    action, area, details: JSON.stringify(details),
+                    userId: currentUser.uid, userEmail: currentUser.email || '',
+                    createdAt: serverTimestamp()
+                });
+            } catch (err) { console.warn('Auditoria não registrada:', err); }
+        }
+
         async function saveProcess(e) {
             e.preventDefault();
             if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
@@ -1509,9 +1576,11 @@
             try {
                 if (id) {
                     await updateDoc(doc(window.db, 'processos', id), procData);
+                    await writeAudit('ATUALIZAÇÃO', 'Demanda', { id, protocolo: procData.protocol, status: procData.status });
                     showToast("Demanda atualizada e sincronizada.", "success");
                 } else {
-                    await addDoc(collection(window.db, 'processos'), { ...procData, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
+                    const created = await addDoc(collection(window.db, 'processos'), { ...procData, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
+                    await writeAudit('CRIAÇÃO', 'Demanda', { id: created.id, protocolo: procData.protocol, status: procData.status });
                     showToast("Nova demanda salva e sincronizada.", "success");
                 }
                 closeModal('modal-processo');
@@ -1555,9 +1624,11 @@
             try {
                 if (id) {
                     await updateDoc(doc(window.db, 'servidores', id), userData);
+                    await writeAudit('ATUALIZAÇÃO', 'Servidor', { id, nome: userData.name, email: userData.email, perfil: userData.role });
                     showToast("Dados do servidor atualizados e sincronizados.", "success");
                 } else {
-                    await addDoc(collection(window.db, 'servidores'), { ...userData, createdAt: serverTimestamp() });
+                    const created = await addDoc(collection(window.db, 'servidores'), { ...userData, createdAt: serverTimestamp() });
+                    await writeAudit('CRIAÇÃO', 'Servidor', { id: created.id, nome: userData.name, email: userData.email, perfil: userData.role });
                     showToast("Novo servidor cadastrado e sincronizado.", "success");
                 }
                 closeModal('modal-usuario');
@@ -1601,6 +1672,7 @@
             try {
                 if (deleteTarget.type === 'process') {
                     await deleteDoc(doc(window.db, 'processos', deleteTarget.id));
+                    await writeAudit('EXCLUSÃO', 'Demanda', { id: deleteTarget.id });
                     showToast("Demanda removida e sincronizada.", "success");
                 } else if (deleteTarget.type === 'user') {
                     const linked = processes.filter(p => normalizeId(p.userId) === normalizeId(deleteTarget.id));
@@ -1608,6 +1680,7 @@
                         await updateDoc(doc(window.db, 'processos', p.id), { userId: '', updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null });
                     }
                     await deleteDoc(doc(window.db, 'servidores', deleteTarget.id));
+                    await writeAudit('EXCLUSÃO', 'Servidor', { id: deleteTarget.id, demandasDesvinculadas: linked.length });
                     showToast("Servidor removido e vínculos atualizados.", "success");
                 }
                 closeModal('modal-confirm');
@@ -1633,6 +1706,18 @@
 
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
+        function renderAuditTable() {
+            const tbody = document.getElementById('tbl-auditoria');
+            if (!tbody) return;
+            if (!isCoordenador) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Acesso restrito à Coordenadoria.</td></tr>'; return; }
+            if (!auditLogs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nenhum evento de auditoria registrado ainda.</td></tr>'; return; }
+            tbody.innerHTML = auditLogs.map(a => {
+                let details = a.details || ''; try { details = JSON.stringify(JSON.parse(details)).replace(/[{}\"]/g,' ').replace(/,/g,' · '); } catch (_) {}
+                const dt = a.createdAt?.toDate ? a.createdAt.toDate() : (a.createdAt ? new Date(a.createdAt) : null);
+                return `<tr><td>${dt ? dt.toLocaleString('pt-BR') : 'Processando…'}</td><td class="audit-action">${a.action || '—'}</td><td>${a.area || '—'}</td><td>${a.userEmail || '—'}</td><td class="audit-detail">${details || '—'}</td></tr>`;
+            }).join('');
+        }
+
         function exportCSV() {
             let csv = 'Servidor;Origem;Protocolo;Descricao;Data_Atribuicao;SLA_Prioridade;Ano;Mes;Semana;Status;Situacao_SLA\n';
             processes.forEach(p => {
@@ -1657,16 +1742,25 @@
         }
     </script>
 
+    <!--
+      CAC SECURITY/SYNC BLUEPRINT:
+      - Firebase Authentication controla identidade/senha.
+      - Firestore Security Rules deve controlar autorização de leitura/escrita.
+      - O HTML não deve ser usado como mecanismo de segurança.
+      - Fonte única de verdade: Firestore.
+      - Realtime obrigatório via onSnapshot para processos, servidores, config/seguranca e auditoria.
+      - Para produção, configure regras do Firestore para permitir alterações administrativas somente ao UID do coordenador.
+    -->
     <!-- FIREBASE: AUTENTICAÇÃO + FIRESTORE EM TEMPO REAL -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
         import {
             getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc,
-            serverTimestamp, getDocs
+            serverTimestamp, getDocs, query, orderBy, limit
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
         import {
-            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
+            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, createUserWithEmailAndPassword,
             EmailAuthProvider, reauthenticateWithCredential, updatePassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
@@ -1697,6 +1791,7 @@
         window.serverTimestamp = serverTimestamp;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.sendPasswordResetEmail = sendPasswordResetEmail;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updatePassword = updatePassword;
@@ -1707,26 +1802,32 @@
             const messages = {
                 'auth/invalid-credential': 'Usuário ou senha inválidos.',
                 'auth/invalid-login-credentials': 'Usuário ou senha inválidos.',
-                'auth/user-not-found': 'Usuário não encontrado.',
+                'auth/user-not-found': 'Conta não encontrada no Firebase Authentication. Cadastre o e-mail do administrador em Authentication > Users.',
                 'auth/wrong-password': 'Senha incorreta.',
                 'auth/too-many-requests': 'Muitas tentativas. Aguarde e tente novamente.',
                 'auth/requires-recent-login': 'Por segurança, faça login novamente antes de alterar a senha.',
-                'auth/email-already-in-use': 'Este e-mail já possui uma conta.',
-                'auth/weak-password': 'A senha deve possuir pelo menos 8 caracteres.'
+                'auth/weak-password': 'A senha deve possuir pelo menos 6 caracteres.',
+                'auth/email-already-in-use': 'A conta administrativa já existe. Use a senha cadastrada ou redefina pelo botão Esqueci a senha.',
+                'auth/operation-not-allowed': 'Ative o provedor E-mail/Senha em Firebase Authentication > Sign-in method.'
             };
             return messages[code] || `Falha de autenticação (${code || 'desconhecida'}).`;
         };
 
         async function resolveLoginEmail(identifier) {
-            const value = identifier.trim().toLowerCase();
+            const value = String(identifier || '').trim().toLowerCase();
             if (value.includes('@')) return value;
-            const security = window.cacSecurity || (await getDocs(collection(db, 'config'))).docs.find(d => d.id === 'seguranca')?.data() || {};
-            if (value === 'admin' && security.adminEmail) return security.adminEmail.toLowerCase();
-            const snap = await getDocs(collection(db, 'servidores'));
-            const coord = snap.docs.map(d => d.data()).find(u => String(u.role || '').toLowerCase() === 'coordenador');
+            const security = window.cacSecurity || {};
+            if (value === 'admin') {
+                if (security.adminEmail) return String(security.adminEmail).trim().toLowerCase();
+                const coord = users.find(u => String(u.role || '').toLowerCase() === 'coordenador' && u.email);
+                if (coord?.email) return coord.email.toLowerCase();
+                return 'admin@cac-painel.firebaseapp.com';
+            }
+            const coord = users.find(u => String(u.role || '').toLowerCase() === 'coordenador' && u.email && String(u.email).toLowerCase() === value);
             if (coord?.email) return coord.email.toLowerCase();
-            throw new Error('Não foi possível localizar o e-mail do coordenador. Use o e-mail cadastrado no Firebase Authentication.');
+            throw new Error('Informe o e-mail da conta no Firebase Authentication ou use admin.');
         }
+
         window.resolveLoginEmail = resolveLoginEmail;
 
         onAuthStateChanged(auth, async (user) => {
@@ -1737,7 +1838,8 @@
                 const securitySnap = await getDocs(collection(db, 'config'));
                 const security = securitySnap.docs.find(d => d.id === 'seguranca')?.data() || {};
                 const coordByEmail = !!user && security.adminEmail && String(security.adminEmail).toLowerCase() === String(user.email || '').toLowerCase();
-                isCoordenador = !!user && (security.adminUid === user.uid || coordByEmail);
+                const coordByRole = !!user && users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(user.email || '').toLowerCase());
+                isCoordenador = !!user && (security.adminUid === user.uid || coordByEmail || coordByRole);
                 window.cacSecurity = security;
             } catch (err) {
                 console.error('Falha ao carregar configuração de segurança:', err);
@@ -1754,6 +1856,8 @@
         function subscribeData() {
             if (unsubProcessos) unsubProcessos();
             if (unsubServidores) unsubServidores();
+            if (unsubConfig) unsubConfig();
+            if (unsubAudit) unsubAudit();
 
             setSyncStatus('loading', 'Sincronizando...');
 
@@ -1778,12 +1882,35 @@
                     users = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     populateDropdowns();
                     applyFilters();
+                    if (currentUser) updateRoleUI();
                 },
                 err => {
                     console.error(err);
                     setSyncStatus('error', 'Erro de sincronização');
                     showToast('Firestore: ' + err.message, 'danger');
                 }
+            );
+
+            unsubConfig = onSnapshot(
+                doc(db, 'config', 'seguranca'),
+                snapshot => {
+                    window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
+                    if (currentUser) {
+                        const sec = window.cacSecurity || {};
+                        isCoordenador = sec.adminUid === currentUser.uid || (sec.adminEmail && String(sec.adminEmail).toLowerCase() === String(currentUser.email || '').toLowerCase()) || users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(currentUser.email || '').toLowerCase());
+                        updateRoleUI();
+                    }
+                },
+                err => console.warn('Configuração em tempo real indisponível:', err)
+            );
+
+            unsubAudit = onSnapshot(
+                query(collection(db, 'auditoria'), orderBy('createdAt', 'desc'), limit(100)),
+                snapshot => {
+                    auditLogs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    renderAuditTable();
+                },
+                err => console.warn('Auditoria em tempo real indisponível:', err)
             );
         }
     </script>
