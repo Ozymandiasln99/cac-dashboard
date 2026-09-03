@@ -1218,13 +1218,13 @@
          * AVISO PARA FUTURAS MANUTENÇÕES: a sincronização em tempo real está validada e é parte estrutural do sistema.
          * Regra permanente para futuras manutenções deste HTML:
          * 1) Dados operacionais devem viver no Firestore, nunca em localStorage/sessionStorage/indexedDB.
-         * 2) Toda coleção que afeta o sistema deve usar onSnapshot para atualização em tempo real.
+         * 2) Toda coleção que afeta o sistema deve usar window.onSnapshot para atualização em tempo real.
          * 3) Toda gravação deve usar addDoc/updateDoc/setDoc/deleteDoc no Firestore.
          * 4) Alterações administrativas e de configuração também devem ser sincronizadas.
          * 5) A interface é apenas uma visão do Firestore; não deve criar uma "fonte local" paralela.
-         * 6) Se este HTML for alterado no futuro, preserve as importações, onSnapshot e funções de escrita acima/abaixo.
+         * 6) Se este HTML for alterado no futuro, preserve as importações, window.onSnapshot e funções de escrita acima/abaixo.
          * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
-         * 8) NÃO iniciar listeners onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
+         * 8) NÃO iniciar listeners window.onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
          * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
          * 10) Base de Dados usa Firestore para metadados e para os dados importados; não depende de Firebase Storage.
          * 11) Importação CSV/XLS/XLSX cria demandas em lotes e cria automaticamente servidores ausentes.
@@ -1374,14 +1374,20 @@
 
             try {
                 const email = await window.resolveLoginEmail(identifier);
+                // ETAPA 1: autenticação. Somente esta etapa decide se usuário/senha estão corretos.
                 const result = await window.signInWithEmailAndPassword(window.firebaseAuth, email, p);
-
-                // Define o perfil imediatamente após a autenticação, sem depender de qualquer cadastro auxiliar.
                 currentUser = result.user;
-                const emailAutenticado = String(result.user?.email || '').trim().toLowerCase();
-                isCoordenador = isCurrentUserCoordinator();
-                adminAuth = { user: isCoordenador ? 'admin' : '', email: emailAutenticado };
-                updateRoleUI();
+
+                // ETAPA 2: pós-login. Um erro de interface/sincronização não pode ser apresentado
+                // como se a senha estivesse errada.
+                try {
+                    const emailAutenticado = String(result.user?.email || '').trim().toLowerCase();
+                    isCoordenador = isCurrentUserCoordinator();
+                    adminAuth = { user: isCoordenador ? 'admin' : '', email: emailAutenticado };
+                    updateRoleUI();
+                } catch (uiErr) {
+                    console.error('CAC pós-login:', uiErr);
+                }
 
                 closeModal('modal-login');
                 showToast(isCoordenador ? "Acesso de Coordenadoria liberado." : "Sessão autenticada com sucesso.", "success");
@@ -1946,8 +1952,8 @@
 
         function subscribeBaseDatabase() {
             if (!currentUser || !isCoordenador || unsubBaseDados) return;
-            unsubBaseDados = onSnapshot(
-                query(collection(window.db, 'baseDados'), orderBy('createdAt', 'desc')),
+            unsubBaseDados = window.onSnapshot(
+                window.query(window.collection(window.db, 'baseDados'), window.orderBy('createdAt', 'desc')),
                 snapshot => {
                     baseDados = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     renderBaseDatabaseTable();
@@ -1990,23 +1996,23 @@
             if (!name) return showToast('Informe o nome da base.', 'warning');
             try {
                 const existing = id ? baseDados.find(b => normalizeId(b.id) === normalizeId(id)) : null;
-                const baseId = id || doc(collection(window.db, 'baseDados')).id;
+                const baseId = id || window.doc(window.collection(window.db, 'baseDados')).id;
                 const payload = {
                     name,
-                    updatedAt: serverTimestamp(),
+                    updatedAt: window.serverTimestamp(),
                     updatedBy: currentUser?.uid || null
                 };
                 if (existing) {
-                    await updateDoc(doc(window.db, 'baseDados', baseId), payload);
+                    await window.updateDoc(window.doc(window.db, 'baseDados', baseId), payload);
                 } else {
-                    await setDoc(doc(window.db, 'baseDados', baseId), {
+                    await window.setDoc(window.doc(window.db, 'baseDados', baseId), {
                         ...payload,
                         fileName: '',
                         size: 0,
                         importedRows: 0,
                         importedAt: null,
                         columns: [],
-                        createdAt: serverTimestamp(),
+                        createdAt: window.serverTimestamp(),
                         createdBy: currentUser?.uid || null
                     });
                 }
@@ -2091,7 +2097,7 @@
                 let deleted = 0;
                 for (let i = 0; i < target.length; i += 400) {
                     const batch = window.cacWriteBatch(window.db);
-                    target.slice(i, i + 400).forEach(p => batch.delete(doc(window.db, 'processos', p.id)));
+                    target.slice(i, i + 400).forEach(p => batch.delete(window.doc(window.db, 'processos', p.id)));
                     await batch.commit();
                     deleted += Math.min(400, target.length - i);
                 }
@@ -2209,7 +2215,7 @@
                 const baseName = file.name.replace(/\\.(csv|xls|xlsx)$/i, '') || file.name;
                 let baseRef = null;
                 const existingBase = baseDados.find(b => String(b.fileName || '').toLowerCase() === file.name.toLowerCase());
-                baseRef = existingBase ? doc(window.db, 'baseDados', existingBase.id) : doc(collection(window.db, 'baseDados'));
+                baseRef = existingBase ? window.doc(window.db, 'baseDados', existingBase.id) : window.doc(window.collection(window.db, 'baseDados'));
                 const baseMeta = {
                     name: existingBase?.name || baseName,
                     fileName: file.name,
@@ -2217,12 +2223,12 @@
                     contentType: file.type || 'application/octet-stream',
                     importedRows: rows.length,
                     columns: Object.keys(sample),
-                    importedAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
+                    importedAt: window.serverTimestamp(),
+                    updatedAt: window.serverTimestamp(),
                     updatedBy: currentUser?.uid || null
                 };
-                if (existingBase) await updateDoc(baseRef, baseMeta);
-                else await setDoc(baseRef, { ...baseMeta, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
+                if (existingBase) await window.updateDoc(baseRef, baseMeta);
+                else await window.setDoc(baseRef, { ...baseMeta, createdAt: window.serverTimestamp(), createdBy: currentUser?.uid || null });
 
                 const serverMap = new Map(users.map(u => [serverKey(u.name), u]));
                 const newServers = [];
@@ -2256,19 +2262,19 @@
                         assignedAt: toDatetimeLocal(assigned),
                         year, month, week, priority, status,
                         importedFrom: file.name,
-                        importedAt: serverTimestamp(),
-                        createdAt: serverTimestamp(), createdBy: currentUser?.uid || null,
-                        updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null
+                        importedAt: window.serverTimestamp(),
+                        createdAt: window.serverTimestamp(), createdBy: currentUser?.uid || null,
+                        updatedAt: window.serverTimestamp(), updatedBy: currentUser?.uid || null
                     };
                     processPayloads.push(payload);
                 }
                 for (const u of newServers) {
-                    const ref = doc(window.db, 'servidores', u.id);
-                    await setDoc(ref, { name: u.name, email: '', role: 'Servidor', importedAuto: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null }, { merge: true });
+                    const ref = window.doc(window.db, 'servidores', u.id);
+                    await window.setDoc(ref, { name: u.name, email: '', role: 'Servidor', importedAuto: true, createdAt: window.serverTimestamp(), updatedAt: window.serverTimestamp(), updatedBy: currentUser?.uid || null }, { merge: true });
                 }
                 for (let i = 0; i < processPayloads.length; i += 400) {
                     const batch = window.cacWriteBatch(window.db);
-                    processPayloads.slice(i, i + 400).forEach(payload => batch.set(doc(collection(window.db, 'processos')), payload));
+                    processPayloads.slice(i, i + 400).forEach(payload => batch.set(window.doc(window.collection(window.db, 'processos')), payload));
                     await batch.commit();
                 }
                 await writeAudit('IMPORTAÇÃO', 'Demandas', { arquivo: file.name, linhas: rows.length, importadas: processPayloads.length, ignoradas: skipped, servidoresCriados: newServers.length });
@@ -2282,10 +2288,10 @@
         async function writeAudit(action, area, details = {}) {
             if (!window.db || !currentUser) return;
             try {
-                await addDoc(collection(window.db, 'auditoria'), {
+                await window.addDoc(window.collection(window.db, 'auditoria'), {
                     action, area, details: JSON.stringify(details),
                     userId: currentUser.uid, userEmail: currentUser.email || '',
-                    createdAt: serverTimestamp()
+                    createdAt: window.serverTimestamp()
                 });
             } catch (err) { console.warn('Auditoria não registrada:', err); }
         }
@@ -2310,18 +2316,18 @@
                 week: document.getElementById('proc-semana').value,
                 priority: document.getElementById('proc-urgencia').value,
                 status: document.getElementById('proc-status').value,
-                updatedAt: serverTimestamp(),
+                updatedAt: window.serverTimestamp(),
                 updatedBy: currentUser?.uid || null
             };
             if (procData.status === 'Concluído' && (!existing || existing.status !== 'Concluído')) procData.completedAt = new Date().toISOString();
 
             try {
                 if (id) {
-                    await updateDoc(doc(window.db, 'processos', id), procData);
+                    await window.updateDoc(window.doc(window.db, 'processos', id), procData);
                     await writeAudit('ATUALIZAÇÃO', 'Demanda', { id, protocolo: procData.protocol, status: procData.status });
                     showToast("Demanda atualizada e sincronizada.", "success");
                 } else {
-                    const created = await addDoc(collection(window.db, 'processos'), { ...procData, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
+                    const created = await window.addDoc(window.collection(window.db, 'processos'), { ...procData, createdAt: window.serverTimestamp(), createdBy: currentUser?.uid || null });
                     await writeAudit('CRIAÇÃO', 'Demanda', { id: created.id, protocolo: procData.protocol, status: procData.status });
                     showToast("Nova demanda salva e sincronizada.", "success");
                 }
@@ -2374,33 +2380,33 @@
             }
 
             try {
-                const cred = await window.createUserWithEmailAndPassword(accessAuth, email, password);
+                const cred = await window.createUserWithEmailAndPassword(window.accessAuth, email, password);
                 const existingProfile = users.find(u => String(u.email || '').trim().toLowerCase() === email);
 
                 if (existingProfile && role === 'Servidor') {
                     // Aproveita o cadastro já existente e apenas vincula a conta de autenticação.
-                    await setDoc(doc(window.db, 'servidores', existingProfile.id), {
-                        name, email, role, authUid: cred.user.uid, updatedAt: serverTimestamp()
+                    await window.setDoc(window.doc(window.db, 'servidores', existingProfile.id), {
+                        name, email, role, authUid: cred.user.uid, updatedAt: window.serverTimestamp()
                     }, { merge: true });
                     const linked = processes.filter(p => normalizeId(p.userId) === normalizeId(existingProfile.id));
                     for (const proc of linked) {
-                        await updateDoc(doc(window.db, 'processos', proc.id), { authUid: cred.user.uid, updatedAt: serverTimestamp() });
+                        await window.updateDoc(window.doc(window.db, 'processos', proc.id), { authUid: cred.user.uid, updatedAt: window.serverTimestamp() });
                     }
                 } else {
                     // Perfis de Coordenador precisam ter o UID como ID do documento para que as regras de segurança consigam autorizá-los.
-                    await setDoc(doc(window.db, 'servidores', cred.user.uid), {
+                    await window.setDoc(window.doc(window.db, 'servidores', cred.user.uid), {
                         name, email, role, authUid: cred.user.uid,
-                        createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                        createdAt: window.serverTimestamp(), updatedAt: window.serverTimestamp()
                     }, { merge: true });
                 }
 
-                await signOut(accessAuth);
+                await window.signOut(window.accessAuth);
                 await writeAudit('CRIAÇÃO', 'Acesso', { nome: name, email, perfil: role, perfilExistenteVinculado: !!existingProfile });
                 closeModal('modal-access');
                 showToast("Novo acesso criado com sucesso.", "success");
             } catch (err) {
                 console.error(err);
-                try { await signOut(accessAuth); } catch (_) {}
+                try { await window.signOut(window.accessAuth); } catch (_) {}
 
                 const code = err?.code || '';
                 if (code === 'auth/email-already-in-use') {
@@ -2424,16 +2430,16 @@
                 name: document.getElementById('usr-nome').value.trim(),
                 email: document.getElementById('usr-email').value.trim().toLowerCase(),
                 role: document.getElementById('usr-role').value,
-                updatedAt: serverTimestamp()
+                updatedAt: window.serverTimestamp()
             };
 
             try {
                 if (id) {
-                    await updateDoc(doc(window.db, 'servidores', id), userData);
+                    await window.updateDoc(window.doc(window.db, 'servidores', id), userData);
                     await writeAudit('ATUALIZAÇÃO', 'Servidor', { id, nome: userData.name, email: userData.email, perfil: userData.role });
                     showToast("Dados do servidor atualizados e sincronizados.", "success");
                 } else {
-                    const created = await addDoc(collection(window.db, 'servidores'), { ...userData, createdAt: serverTimestamp() });
+                    const created = await window.addDoc(window.collection(window.db, 'servidores'), { ...userData, createdAt: window.serverTimestamp() });
                     await writeAudit('CRIAÇÃO', 'Servidor', { id: created.id, nome: userData.name, email: userData.email, perfil: userData.role });
                     showToast("Novo servidor cadastrado e sincronizado.", "success");
                 }
@@ -2489,21 +2495,21 @@
                     if (!proc || !canDeleteProcess(proc)) throw new Error('Você não tem permissão para excluir esta demanda.');
                 }
                 if (deleteTarget.type === 'process') {
-                    await deleteDoc(doc(window.db, 'processos', deleteTarget.id));
+                    await window.deleteDoc(window.doc(window.db, 'processos', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Demanda', { id: deleteTarget.id });
                     showToast("Demanda removida e sincronizada.", "success");
                 } else if (deleteTarget.type === 'user') {
                     const linked = processes.filter(p => normalizeId(p.userId) === normalizeId(deleteTarget.id));
                     for (const p of linked) {
-                        await updateDoc(doc(window.db, 'processos', p.id), { userId: '', updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null });
+                        await window.updateDoc(window.doc(window.db, 'processos', p.id), { userId: '', updatedAt: window.serverTimestamp(), updatedBy: currentUser?.uid || null });
                     }
-                    await deleteDoc(doc(window.db, 'servidores', deleteTarget.id));
+                    await window.deleteDoc(window.doc(window.db, 'servidores', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Servidor', { id: deleteTarget.id, demandasDesvinculadas: linked.length });
                     showToast("Servidor removido e vínculos atualizados.", "success");
                 } else if (deleteTarget.type === 'base') {
                     const base = baseDados.find(b => normalizeId(b.id) === normalizeId(deleteTarget.id));
                     if (!base) throw new Error('Base de dados não encontrada.');
-                    await deleteDoc(doc(window.db, 'baseDados', deleteTarget.id));
+                    await window.deleteDoc(window.doc(window.db, 'baseDados', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Base de Dados', { id: deleteTarget.id, nome: base.name });
                     showToast("Base de dados removida do Firestore.", "success");
                 }
@@ -2619,7 +2625,7 @@
       - As regras de segurança do banco controlam autorização de leitura/escrita.
       - O HTML não deve ser usado como mecanismo de segurança.
       - Fonte única de verdade: Firestore.
-      - Realtime obrigatório via onSnapshot para processos, servidores, configurações e auditoria.
+      - Realtime obrigatório via window.onSnapshot para processos, servidores, configurações e auditoria.
       - A conta da Coordenadoria é validada pelo serviço de autenticação; não criar senha fixa no HTML.
       - O alias admin deve apontar para CAC_ADMIN_EMAIL e nunca depender de armazenamento local.
       - Para produção, configure regras do Firestore para permitir alterações administrativas somente ao UID do coordenador.
@@ -2671,6 +2677,20 @@
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updatePassword = updatePassword;
         window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+
+        // Ponte única entre o módulo Firebase e as funções globais da interface.
+        // Evita ReferenceError quando uma função definida fora do módulo usa APIs Firebase.
+        window.onSnapshot = onSnapshot;
+        window.query = query;
+        window.orderBy = orderBy;
+        window.limit = limit;
+        window.getDocs = getDocs;
+        window.setDoc = setDoc;
+        window.accessAuth = accessAuth;
+        window.signOut = signOut;
+        window.serverTimestamp = serverTimestamp;
+        window.writeBatch = writeBatch;
+
         firebaseReady = true;
 
         window.firebaseAuthMessage = (err) => {
