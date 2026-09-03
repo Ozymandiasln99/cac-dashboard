@@ -1251,7 +1251,7 @@
         /* Conta administrativa da Coordenadoria. */
         const CAC_ADMIN_EMAIL = 'l.n.1999oficial@gmail.com';
 
-        /* AUTENTICAÇÃO E PERMISSÕES */
+        /* AUTENTICAÇÃO E PERMISSÕES — modelo por e-mail principal + perfil UID */
         function openLoginModal() { document.getElementById('modal-login').style.display = 'flex'; }
         function openChangePassModal() { document.getElementById('modal-change-pass').style.display = 'flex'; }
 
@@ -1268,7 +1268,7 @@
                 // Define o perfil imediatamente após a autenticação, sem depender de qualquer cadastro auxiliar.
                 currentUser = result.user;
                 const emailAutenticado = String(result.user?.email || '').trim().toLowerCase();
-                isCoordenador = emailAutenticado === String(CAC_ADMIN_EMAIL).trim().toLowerCase();
+                isCoordenador = isCurrentUserCoordinator();
                 adminAuth = { user: isCoordenador ? 'admin' : '', email: emailAutenticado };
                 updateRoleUI();
 
@@ -1327,35 +1327,29 @@
                 || null;
         }
 
-        // REGRA DEFINITIVA DE AUTORIZAÇÃO DA INTERFACE:
-        // somente Coordenadores podem criar, alterar ou excluir demandas e servidores.
-        // Servidores possuem acesso operacional, mas nunca ações administrativas.
+        // AUTORIZAÇÃO REFORMULADA — MODELO SIMPLES E DETERMINÍSTICO
+        // 1) A conta principal é Coordenador pelo e-mail fixo.
+        // 2) Coordenadores adicionais são reconhecidos SOMENTE pelo documento servidores/{UID}
+        //    com role exatamente igual a "Coordenador".
+        // 3) Nenhuma permissão de escrita depende de config/seguranca ou de listas auxiliares.
+        // 4) Servidores continuam podendo consultar os dados, mas nunca escrever.
         function isCurrentUserCoordinator() {
             if (!currentUser) return false;
 
             const email = String(currentUser.email || '').trim().toLowerCase();
             const adminEmail = String(CAC_ADMIN_EMAIL || '').trim().toLowerCase();
-
-            // Conta principal: sempre Coordenador.
             if (email && email === adminEmail) return true;
 
-            // Cadastro centralizado de Coordenadores em config/seguranca.
-            const security = window.cacSecurity || {};
-            const coordinatorEmails = Array.isArray(security.coordinatorEmails)
-                ? security.coordinatorEmails.map(v => String(v).trim().toLowerCase())
-                : [];
-            const coordinatorUids = Array.isArray(security.coordinatorUids)
-                ? security.coordinatorUids.map(v => normalizeId(v))
-                : [];
-
-            if (email && coordinatorEmails.includes(email)) return true;
-            if (currentUser.uid && coordinatorUids.includes(normalizeId(currentUser.uid))) return true;
-
-            // Compatibilidade com cadastros já existentes.
             const uid = normalizeId(currentUser.uid);
-            const profile = users.find(u => normalizeId(u.id) === uid)
-                || users.find(u => normalizeId(u.authUid) === uid);
-            return String(profile?.role || '').trim().toLowerCase() === 'coordenador';
+            if (!uid) return false;
+
+            // Primeiro tenta o perfil carregado em memória.
+            const profile = users.find(u => normalizeId(u.id) === uid);
+            if (String(profile?.role || '').trim() === 'Coordenador') return true;
+
+            // Compatibilidade: perfis antigos podem ter authUid apontando para a conta.
+            const linked = users.find(u => normalizeId(u.authUid) === uid);
+            return String(linked?.role || '').trim() === 'Coordenador';
         }
 
         function syncCoordinatorState() {
@@ -2096,6 +2090,25 @@
         }
         window.resolveLoginEmail = resolveLoginEmail;
 
+        // Diagnóstico rápido: ajuda a identificar imediatamente se o bloqueio é de interface,
+        // autenticação ou Security Rules. Não grava nada no Firestore.
+        window.cacDiagnosticoPermissao = function() {
+            const profile = getCurrentProfile();
+            const coordinator = isCurrentUserCoordinator();
+            const info = {
+                projeto: firebaseConfig?.projectId || 'desconhecido',
+                autenticado: !!currentUser,
+                email: currentUser?.email || null,
+                uid: currentUser?.uid || null,
+                coordenador: coordinator,
+                perfil: profile?.role || null,
+                perfilId: profile?.id || null,
+                authUidDoPerfil: profile?.authUid || null
+            };
+            console.info('CAC — diagnóstico de permissão', info);
+            return info;
+        };
+
         onAuthStateChanged(auth, async (user) => {
             currentUser = user || null;
             const emailAtual = String(user?.email || '').trim().toLowerCase();
@@ -2156,14 +2169,13 @@
                 }
             );
 
+            // config/seguranca continua sendo sincronizada para as demais configurações do sistema,
+            // mas NÃO participa da autorização de Coordenadores.
             unsubConfig = onSnapshot(
                 doc(db, 'config', 'seguranca'),
                 snapshot => {
                     window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
-                    if (currentUser) {
-                        isCoordenador = isCurrentUserCoordinator();
-                        updateRoleUI();
-                    }
+                    if (currentUser) updateRoleUI();
                 },
                 err => console.warn('Configuração em tempo real indisponível:', err)
             );
