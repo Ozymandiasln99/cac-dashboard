@@ -1373,8 +1373,8 @@
             const p = document.getElementById('login-pass').value;
 
             try {
-                const email = await resolveLoginEmail(identifier);
-                const result = await signInWithEmailAndPassword(window.firebaseAuth, email, p);
+                const email = await window.resolveLoginEmail(identifier);
+                const result = await window.signInWithEmailAndPassword(window.firebaseAuth, email, p);
 
                 // Define o perfil imediatamente após a autenticação, sem depender de qualquer cadastro auxiliar.
                 currentUser = result.user;
@@ -1387,7 +1387,7 @@
                 showToast(isCoordenador ? "Acesso de Coordenadoria liberado." : "Sessão autenticada com sucesso.", "success");
             } catch (err) {
                 console.error(err);
-                showToast(firebaseAuthMessage(err), "danger");
+                showToast(window.firebaseAuthMessage(err), "danger");
             }
         }
 
@@ -1396,10 +1396,10 @@
             const identifier = document.getElementById('login-user').value.trim();
             if (!identifier) return showToast("Informe admin ou o e-mail da Coordenadoria para recuperar a senha.", "warning");
             try {
-                const email = await resolveLoginEmail(identifier);
-                await sendPasswordResetEmail(window.firebaseAuth, email);
+                const email = await window.resolveLoginEmail(identifier);
+                await window.sendPasswordResetEmail(window.firebaseAuth, email);
                 showToast("Se a conta existir, o link de redefinição foi enviado para o e-mail cadastrado.", "success");
-            } catch (err) { console.error(err); showToast(firebaseAuthMessage(err), "danger"); }
+            } catch (err) { console.error(err); showToast(window.firebaseAuthMessage(err), "danger"); }
         }
 
         async function handleChangePassword(e) {
@@ -1413,16 +1413,16 @@
             if (newPass.length < 8) return showToast("A nova senha deve possuir pelo menos 8 caracteres.", "warning");
 
             try {
-                const credential = EmailAuthProvider.credential(currentUser.email, current);
-                await reauthenticateWithCredential(currentUser, credential);
-                await updatePassword(currentUser, newPass);
+                const credential = window.EmailAuthProvider.credential(currentUser.email, current);
+                await window.reauthenticateWithCredential(currentUser, credential);
+                await window.updatePassword(currentUser, newPass);
                 await writeAudit('ALTERAÇÃO DE SENHA', 'Autenticação', { conta: currentUser.email });
                 closeModal('modal-change-pass');
                 ['pass-current','pass-new','pass-confirm'].forEach(id => document.getElementById(id).value = '');
                 showToast("Senha alterada com sucesso em todos os dispositivos.", "success");
             } catch (err) {
                 console.error(err);
-                showToast(firebaseAuthMessage(err), "danger");
+                showToast(window.firebaseAuthMessage(err), "danger");
             }
         }
 
@@ -2374,7 +2374,7 @@
             }
 
             try {
-                const cred = await createUserWithEmailAndPassword(accessAuth, email, password);
+                const cred = await window.createUserWithEmailAndPassword(accessAuth, email, password);
                 const existingProfile = users.find(u => String(u.email || '').trim().toLowerCase() === email);
 
                 if (existingProfile && role === 'Servidor') {
@@ -2670,6 +2670,7 @@
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updatePassword = updatePassword;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
         firebaseReady = true;
 
         window.firebaseAuthMessage = (err) => {
@@ -2685,7 +2686,7 @@
                 'auth/email-already-in-use': 'A conta administrativa já existe. Use a senha cadastrada ou redefina pelo botão Esqueci a senha.',
                 'auth/operation-not-allowed': 'O método de acesso por e-mail e senha não está disponível. Verifique a configuração de acesso da aplicação.'
             };
-            return messages[code] || `Falha de autenticação (${code || 'desconhecida'}).`;
+            return messages[code] || (err?.message ? `Falha de autenticação: ${err.message}` : `Falha de autenticação (${code || 'desconhecida'}).`);
         };
 
         async function resolveLoginEmail(identifier) {
