@@ -1399,6 +1399,33 @@
             return !!p && isCurrentUserCoordinator();
         }
 
+        /*
+         * CAC — VISIBILIDADE PERMANENTE
+         * NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
+         *
+         * Visitantes sem login podem consultar o Painel Geral, Demandas e
+         * Relatório Gerencial. Usuários autenticados com perfil Servidor veem
+         * somente as demandas atribuídas ao próprio perfil. Coordenadores veem
+         * todos os dados. As ações de alteração/exclusão continuam exclusivas
+         * da Coordenadoria.
+         */
+        function getCurrentVisibleProcesses() {
+            if (!currentUser) return processes.slice(); // visitante público: leitura
+            if (isCoordenador) return processes.slice();
+            const profile = getCurrentProfile();
+            if (String(profile?.role || '').trim().toLowerCase() !== 'servidor') return [];
+            const ids = new Set([normalizeId(profile?.id), normalizeId(profile?.authUid)].filter(Boolean));
+            return processes.filter(p => ids.has(normalizeId(p.userId)) || ids.has(normalizeId(p.authUid)));
+        }
+
+        function getCurrentVisibleUsers() {
+            if (!currentUser) return users.slice();
+            if (isCoordenador) return users.slice();
+            const profile = getCurrentProfile();
+            if (String(profile?.role || '').trim().toLowerCase() !== 'servidor') return [];
+            return profile ? [profile] : [];
+        }
+
         function updateRoleUI() {
             const badge = document.getElementById('user-role-badge');
             const roleLbl = document.getElementById('lbl-user-role');
@@ -1425,7 +1452,7 @@
                 btnLogin.style.display = 'flex'; btnLogout.style.display = 'none'; btnChangePass.style.display = 'none';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
             }
-            renderProcessTable(processes);
+            renderProcessTable(getCurrentVisibleProcesses());
         }
 
         /* NAVEGAÇÃO VIA MENU */
@@ -1455,14 +1482,22 @@
         function populateDropdowns() {
             const selectFilter = document.getElementById('filter-servidor');
             const selectProc = document.getElementById('proc-servidor');
+            const visibleUsers = getCurrentVisibleUsers();
 
             selectFilter.innerHTML = '<option value="todos">Todos</option>';
             selectProc.innerHTML = '';
 
-            users.forEach(u => {
-                selectFilter.innerHTML += `<option value="${u.id}">${u.name}</option>`;
-                selectProc.innerHTML += `<option value="${u.id}">${u.name}</option>`;
+            visibleUsers.forEach(u => {
+                selectFilter.innerHTML += `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)}</option>`;
+                if (isCoordenador) {
+                    selectProc.innerHTML += `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)}</option>`;
+                }
             });
+
+            // Visitante/Servidor nunca deve receber o seletor de atribuição como ação de escrita.
+            if (!isCoordenador) {
+                selectProc.innerHTML = '';
+            }
         }
 
         function resetFilters() {
@@ -1489,14 +1524,21 @@
             const stVal = document.getElementById('filter-status').value;
             const prazoVal = document.getElementById('filter-prazo').value;
 
-            // A tabela respeita os filtros; o Painel Principal usa SEMPRE a coleção
-            // completa recebida do Firestore. Assim, um filtro não pode "sumir"
-            // com uma demanda do total executivo.
-            const filtered = processes.filter(p => {
-                const u = users.find(usr => usr.id == p.userId) || { name: 'Desconhecido' };
+            // Painel, demandas e relatório usam o recorte permitido ao usuário.
+            const visibleProcesses = getCurrentVisibleProcesses();
+            const visibleUsers = getCurrentVisibleUsers();
+
+            const filtered = visibleProcesses.filter(p => {
+                const u = visibleUsers.find(usr => normalizeId(usr.id) === normalizeId(p.userId))
+                    || users.find(usr => normalizeId(usr.id) === normalizeId(p.userId))
+                    || { name: 'Desconhecido' };
                 const prazo = getPrazoStatus(p);
 
-                const matchQuery = String(p.protocol || '').toLowerCase().includes(query) || String(p.desc || '').toLowerCase().includes(query) || String(u.name || '').toLowerCase().includes(query);
+                const matchQuery =
+                    String(p.protocol || '').toLowerCase().includes(query) ||
+                    String(p.desc || '').toLowerCase().includes(query) ||
+                    String(u.name || '').toLowerCase().includes(query);
+
                 const matchS = (sVal === 'todos' || p.userId == sVal);
                 const matchO = (oVal === 'todos' || p.system === oVal);
                 const matchA = (aVal === 'todos' || p.year == aVal);
@@ -1512,7 +1554,7 @@
                 return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
             });
 
-            updateMetrics(processes);
+            updateMetrics(visibleProcesses);
             renderProcessTable(filtered);
             renderUserTable();
             renderReportSummary();
@@ -1555,11 +1597,11 @@
                 if(critical)rows.push(`<div class="risk-item"><span>Prioridade crítica</span><strong class="badge badge-danger">${critical}</strong></div>`);
                 risks.innerHTML=rows.length?rows.join(''):'<div class="insight-detail">Sem alertas relevantes no recorte atual.</div>';}
             const top=document.getElementById('insight-top-user'), topD=document.getElementById('insight-top-user-detail');
-            const ranking=users.map(u=>{const rows=data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)),done=rows.filter(p=>p.status==='Concluído').length;
+            const ranking=getCurrentVisibleUsers().map(u=>{const rows=data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)),done=rows.filter(p=>p.status==='Concluído').length;
                 return {name:u.name,total:rows.length,done,rate:rows.length?Math.round(done/rows.length*100):0};}).filter(x=>x.total).sort((a,b)=>b.rate-a.rate||b.done-a.done||b.total-a.total);
             if(top&&topD){if(ranking.length){top.textContent=ranking[0].name;topD.textContent=`${ranking[0].rate}% de resolutividade · ${ranking[0].done} concluída(s) em ${ranking[0].total} demanda(s).`;}else{top.textContent='—';topD.textContent='Sem dados suficientes para o ranking.';}}
             const workloadEl=document.getElementById('insight-workload'), workloadD=document.getElementById('insight-workload-detail');
-            const loads=users.map(u=>({name:u.name,total:data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)&&p.status!=='Concluído').length})).filter(x=>x.total>0);
+            const loads=getCurrentVisibleUsers().map(u=>({name:u.name,total:data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)&&p.status!=='Concluído').length})).filter(x=>x.total>0);
             if(workloadEl&&workloadD){
                 if(!loads.length){workloadEl.textContent='Equilibrada';workloadD.textContent='Nenhuma demanda ativa registrada.';}
                 else {const max=Math.max(...loads.map(x=>x.total)),min=Math.min(...loads.map(x=>x.total)),busiest=loads.slice().sort((a,b)=>b.total-a.total)[0];workloadEl.textContent=(max-min<=1?'Equilibrada':'Revisar distribuição');workloadD.textContent=`${busiest.name} concentra ${busiest.total} demanda(s) ativa(s).`; }
@@ -1748,8 +1790,8 @@
             const tbody = document.getElementById('tbl-report-summary');
             tbody.innerHTML = '';
 
-            users.forEach(u => {
-                const uProcs = processes.filter(p => p.userId == u.id);
+            getCurrentVisibleUsers().forEach(u => {
+                const uProcs = getCurrentVisibleProcesses().filter(p => p.userId == u.id);
                 const total = uProcs.length;
                 const sipac = uProcs.filter(p => p.system === 'SIPAC').length;
                 const sagitta = uProcs.filter(p => p.system === 'SAGITTA').length;
@@ -2036,7 +2078,7 @@
             const summary = document.getElementById('overdue-alert-summary');
             const list = document.getElementById('overdue-alert-list');
             if (!panel || !summary || !list) return;
-            const active = processes.map(p => ({p, prazo:getPrazoStatus(p)})).filter(x => x.p.status !== 'Concluído');
+            const active = getCurrentVisibleProcesses().map(p => ({p, prazo:getPrazoStatus(p)})).filter(x => x.p.status !== 'Concluído');
             const overdue = active.filter(x => x.prazo.expired);
             const attention = active.filter(x => !x.prazo.expired && !x.prazo.invalid && x.prazo.remainingHours <= 24);
             panel.style.display = (overdue.length || attention.length) ? 'block' : 'none';
@@ -2204,6 +2246,14 @@
         };
 
         /*
+         * REGRA PERMANENTE DE VISUALIZAÇÃO — NÃO REMOVER.
+         * Áreas públicas: Painel Geral, Demandas & Prazos e Relatório Gerencial.
+         * Visitantes possuem somente leitura.
+         * Servidores autenticados possuem somente leitura das próprias demandas.
+         * Coordenadores possuem leitura completa e as ações de escrita já existentes.
+         * Não transformar estas áreas em admin-only sem solicitação expressa.
+         */
+        /*
          * CORREÇÃO PERMANENTE — INICIALIZAÇÃO DA SINCRONIZAÇÃO
          * NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
          *
@@ -2231,29 +2281,29 @@
 
             updateRoleUI();
 
-            // NÃO assinar Firestore antes da autenticação estar restaurada.
-            // Isso evita permission-denied durante o F5/recarregamento.
+            /*
+             * VISITANTE PÚBLICO:
+             * A ausência de login não impede a leitura das áreas públicas.
+             * Mantemos os listeners de processos/servidores ativos para que
+             * Painel Geral, Demandas e Relatório funcionem sem autenticação.
+             * Configuração e Auditoria continuam restritas e não são assinadas
+             * para visitantes.
+             */
             if (!user) {
-                if (unsubProcessos) { unsubProcessos(); unsubProcessos = null; }
-                if (unsubServidores) { unsubServidores(); unsubServidores = null; }
-                if (unsubConfig) { unsubConfig(); unsubConfig = null; }
-                if (unsubAudit) { unsubAudit(); unsubAudit = null; }
-                processes = [];
-                users = [];
-                auditLogs = [];
-                setSyncStatus('idle', 'Aguardando autenticação');
-                applyFilters();
+                setSyncStatus('loading', 'Carregando consulta pública...');
+                subscribeData({ publicVisitor: true });
                 return;
             }
 
             setSyncStatus('loading', 'Sincronizando...');
-            subscribeData();
+            subscribeData({ publicVisitor: false });
         });
 
         let unsubProcessos = null;
         let unsubServidores = null;
 
-        function subscribeData() {
+        function subscribeData(options = {}) {
+            const publicVisitor = !!options.publicVisitor;
             if (unsubProcessos) unsubProcessos();
             if (unsubServidores) unsubServidores();
             if (unsubConfig) unsubConfig();
@@ -2291,25 +2341,29 @@
                 }
             );
 
-            // config/seguranca continua sendo sincronizada para as demais configurações do sistema,
-            // mas NÃO participa da autorização de Coordenadores.
-            unsubConfig = onSnapshot(
-                doc(db, 'config', 'seguranca'),
-                snapshot => {
-                    window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
-                    if (currentUser) updateRoleUI();
-                },
-                err => console.warn('Configuração em tempo real indisponível:', err)
-            );
+            // Configuração e auditoria permanecem fora da área pública.
+            if (!publicVisitor) {
+                unsubConfig = onSnapshot(
+                    doc(db, 'config', 'seguranca'),
+                    snapshot => {
+                        window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
+                        if (currentUser) updateRoleUI();
+                    },
+                    err => console.warn('Configuração em tempo real indisponível:', err)
+                );
 
-            unsubAudit = onSnapshot(
-                query(collection(db, 'auditoria'), orderBy('createdAt', 'desc'), limit(100)),
-                snapshot => {
-                    auditLogs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    renderAuditTable();
-                },
-                err => console.warn('Auditoria em tempo real indisponível:', err)
-            );
+                unsubAudit = onSnapshot(
+                    query(collection(db, 'auditoria'), orderBy('createdAt', 'desc'), limit(100)),
+                    snapshot => {
+                        auditLogs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        renderAuditTable();
+                    },
+                    err => console.warn('Auditoria em tempo real indisponível:', err)
+                );
+            } else {
+                auditLogs = [];
+                renderAuditTable();
+            }
         }
     </script>
 </body>
