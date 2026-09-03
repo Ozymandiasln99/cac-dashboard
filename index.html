@@ -876,7 +876,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Base de Dados</h3>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Armazene arquivos CSV/Excel na nuvem e use-os para carregar demandas automaticamente.</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Cadastre bases no Firestore e importe CSV/Excel diretamente para carregar demandas automaticamente — sem Firebase Storage.</div>
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn-outline admin-only" onclick="openBaseDatabaseModal()"><i class="fa-solid fa-plus"></i> Nova base</button>
@@ -887,7 +887,7 @@
                     </div>
                     <div class="table-responsive">
                         <table>
-                            <thead><tr><th>Nome da Base</th><th>Arquivo</th><th>Tamanho</th><th>Atualizada em</th><th>Ações</th></tr></thead>
+                            <thead><tr><th>Nome da Base</th><th>Último arquivo importado</th><th>Registros</th><th>Atualizada em</th><th>Ações</th></tr></thead>
                             <tbody id="tbl-base-dados"></tbody>
                         </table>
                     </div>
@@ -1132,10 +1132,8 @@
                     <label>Nome da Base</label>
                     <input type="text" id="base-name" required maxlength="120" placeholder="Ex.: Carga SIPAC Setembro 2026">
                 </div>
-                <div class="form-group">
-                    <label>Arquivo CSV / Excel</label>
-                    <input type="file" id="base-file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;">Até 20 MB. Ao editar, o arquivo só é substituído se um novo arquivo for selecionado.</div>
+                <div style="font-size:11px;color:var(--text-muted);line-height:1.5;">
+                    Esta base funciona no plano Spark: o CSV/Excel é lido diretamente no navegador e os dados importados ficam sincronizados no Firestore. O arquivo físico não é enviado ao Firebase Storage.
                 </div>
                 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-base-dados')">Cancelar</button>
@@ -1228,7 +1226,7 @@
          * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
          * 8) NÃO iniciar listeners onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
          * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
-         * 10) Base de Dados usa Firestore para metadados e Firebase Storage para os arquivos.
+         * 10) Base de Dados usa Firestore para metadados e para os dados importados; não depende de Firebase Storage.
          * 11) Importação CSV/XLS/XLSX cria demandas em lotes e cria automaticamente servidores ausentes.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
@@ -1973,7 +1971,6 @@
             if (!requireCoordinator('gerenciar bases de dados')) return;
             document.getElementById('base-id').value = '';
             document.getElementById('base-name').value = '';
-            document.getElementById('base-file').value = '';
             document.getElementById('lbl-base-modal').innerText = 'Nova Base de Dados';
             if (id) {
                 const base = baseDados.find(b => normalizeId(b.id) === normalizeId(id));
@@ -1990,48 +1987,36 @@
             if (!requireCoordinator('gerenciar bases de dados')) return;
             const id = document.getElementById('base-id').value.trim();
             const name = document.getElementById('base-name').value.trim();
-            const file = document.getElementById('base-file').files[0] || null;
             if (!name) return showToast('Informe o nome da base.', 'warning');
-            if (file && file.size > 20 * 1024 * 1024) return showToast('O arquivo excede o limite de 20 MB.', 'warning');
-            if (file && !/\.(csv|xls|xlsx)$/i.test(file.name)) return showToast('Use um arquivo CSV, XLS ou XLSX.', 'warning');
             try {
                 const existing = id ? baseDados.find(b => normalizeId(b.id) === normalizeId(id)) : null;
-                let baseId = id;
-                if (!baseId) baseId = doc(collection(window.db, 'baseDados')).id;
-                let storagePath = existing?.storagePath || `bases_dados/${baseId}/${sanitizeStorageName(file?.name || existing?.fileName || name)}`;
-                if (file) {
-                    storagePath = `bases_dados/${baseId}/${sanitizeStorageName(file.name)}`;
-                    const storage = window.cacStorage;
-                    if (!storage) throw new Error('Firebase Storage não está disponível.');
-                    await storage.uploadBytes(storage.storageRef(storage.storage, storagePath), file, { contentType: file.type || 'application/octet-stream', customMetadata: { baseId, originalName: file.name } });
-                }
+                const baseId = id || doc(collection(window.db, 'baseDados')).id;
                 const payload = {
                     name,
-                    fileName: file?.name || existing?.fileName || '',
-                    size: file?.size || existing?.size || 0,
-                    contentType: file?.type || existing?.contentType || 'application/octet-stream',
-                    storagePath,
                     updatedAt: serverTimestamp(),
                     updatedBy: currentUser?.uid || null
                 };
-                if (existing) await updateDoc(doc(window.db, 'baseDados', baseId), payload);
-                else await setDoc(doc(window.db, 'baseDados', baseId), { ...payload, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
-                if (existing?.storagePath && file && existing.storagePath !== storagePath && window.cacStorage) {
-                    try { await window.cacStorage.deleteObject(window.cacStorage.storageRef(window.cacStorage.storage, existing.storagePath)); } catch (oldStorageErr) {
-                        if (oldStorageErr?.code !== 'storage/object-not-found') console.warn('Arquivo anterior não removido:', oldStorageErr);
-                    }
+                if (existing) {
+                    await updateDoc(doc(window.db, 'baseDados', baseId), payload);
+                } else {
+                    await setDoc(doc(window.db, 'baseDados', baseId), {
+                        ...payload,
+                        fileName: '',
+                        size: 0,
+                        importedRows: 0,
+                        importedAt: null,
+                        columns: [],
+                        createdAt: serverTimestamp(),
+                        createdBy: currentUser?.uid || null
+                    });
                 }
-                await writeAudit(existing ? 'ATUALIZAÇÃO' : 'CRIAÇÃO', 'Base de Dados', { id: baseId, nome: name, arquivo: payload.fileName });
+                await writeAudit(existing ? 'ATUALIZAÇÃO' : 'CRIAÇÃO', 'Base de Dados', { id: baseId, nome: name });
                 closeModal('modal-base-dados');
-                showToast(existing ? 'Base de dados atualizada.' : 'Base de dados armazenada na nuvem.', 'success');
+                showToast(existing ? 'Base de dados atualizada.' : 'Base de dados criada no Firestore.', 'success');
             } catch (err) {
                 console.error(err);
                 showToast('Não foi possível salvar a base: ' + err.message, 'danger');
             }
-        }
-
-        function sanitizeStorageName(value) {
-            return String(value || 'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 180) || 'arquivo';
         }
 
         function renderBaseDatabaseTable() {
@@ -2041,8 +2026,18 @@
             if (!baseDados.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nenhuma base de dados cadastrada.</td></tr>'; return; }
             tbody.innerHTML = baseDados.map(b => {
                 const dt = b.updatedAt?.toDate ? b.updatedAt.toDate() : (b.updatedAt ? new Date(b.updatedAt) : null);
-                const id = normalizeId(b.id);
-                return `<tr><td><strong>${escapeHtml(b.name || 'Sem nome')}</strong></td><td>${escapeHtml(b.fileName || '—')}</td><td>${formatFileSize(b.size)}</td><td>${dt ? escapeHtml(dt.toLocaleString('pt-BR')) : 'Processando…'}</td><td class="process-actions"><button type="button" class="icon-action-btn" data-base-action="download" data-id="${escapeHtml(id)}" title="Baixar"><i class="fa-solid fa-download"></i></button><button type="button" class="icon-action-btn edit-process-btn" data-base-action="edit" data-id="${escapeHtml(id)}" title="Alterar"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" class="icon-action-btn delete-process-btn" data-base-action="delete" data-id="${escapeHtml(id)}" title="Excluir"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+                const imported = Number(b.importedRows || 0);
+                const fileName = b.fileName || '—';
+                return `<tr>
+                    <td><strong>${escapeHtml(b.name || 'Sem nome')}</strong></td>
+                    <td>${escapeHtml(fileName)}</td>
+                    <td>${imported ? `${imported.toLocaleString('pt-BR')} registros` : 'Sem importação'}</td>
+                    <td>${dt ? escapeHtml(dt.toLocaleString('pt-BR')) : 'Processando…'}</td>
+                    <td class="process-actions">
+                        <button type="button" class="icon-action-btn edit-process-btn" data-base-action="edit" data-id="${escapeHtml(normalizeId(b.id))}" title="Alterar"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button type="button" class="icon-action-btn delete-process-btn" data-base-action="delete" data-id="${escapeHtml(normalizeId(b.id))}" title="Excluir"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
             }).join('');
         }
 
@@ -2055,19 +2050,7 @@
             if (!id) return;
             if (action === 'edit') openBaseDatabaseModal(id);
             if (action === 'delete') confirmDelete('base', id);
-            if (action === 'download') downloadBaseDatabase(id);
         });
-
-        async function downloadBaseDatabase(id) {
-            if (!requireCoordinator('baixar bases de dados')) return;
-            const base = baseDados.find(b => normalizeId(b.id) === normalizeId(id));
-            if (!base?.storagePath) return showToast('Arquivo da base não encontrado.', 'danger');
-            try {
-                const storage = window.cacStorage;
-                const url = await storage.getDownloadURL(storage.storageRef(storage.storage, base.storagePath));
-                const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.click();
-            } catch (err) { console.error(err); showToast('Não foi possível obter o arquivo: ' + err.message, 'danger'); }
-        }
 
         function initCleanupSelectors() {
             const y = document.getElementById('cleanup-year');
@@ -2221,6 +2204,25 @@
                 const missing = required.slice(0, 4).filter(group => !group.some(x => headers.includes(normalizeImportedKey(x))));
                 if (missing.length) throw new Error('Colunas obrigatórias não encontradas. Necessárias: Servidor, Origem, Protocolo e Descricao.');
                 if (!confirm(`Foram encontradas ${rows.length} linha(s). As demandas serão importadas e os servidores ausentes serão criados automaticamente. Continuar?`)) return;
+
+                // No plano Spark, o arquivo permanece apenas no navegador. Criamos/atualizamos a base no Firestore e armazenamos os dados importados em 'processos'.
+                const baseName = file.name.replace(/\\.(csv|xls|xlsx)$/i, '') || file.name;
+                let baseRef = null;
+                const existingBase = baseDados.find(b => String(b.fileName || '').toLowerCase() === file.name.toLowerCase());
+                baseRef = existingBase ? doc(window.db, 'baseDados', existingBase.id) : doc(collection(window.db, 'baseDados'));
+                const baseMeta = {
+                    name: existingBase?.name || baseName,
+                    fileName: file.name,
+                    size: file.size,
+                    contentType: file.type || 'application/octet-stream',
+                    importedRows: rows.length,
+                    columns: Object.keys(sample),
+                    importedAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    updatedBy: currentUser?.uid || null
+                };
+                if (existingBase) await updateDoc(baseRef, baseMeta);
+                else await setDoc(baseRef, { ...baseMeta, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
 
                 const serverMap = new Map(users.map(u => [serverKey(u.name), u]));
                 const newServers = [];
@@ -2501,14 +2503,9 @@
                 } else if (deleteTarget.type === 'base') {
                     const base = baseDados.find(b => normalizeId(b.id) === normalizeId(deleteTarget.id));
                     if (!base) throw new Error('Base de dados não encontrada.');
-                    if (base.storagePath && window.cacStorage) {
-                        try { await window.cacStorage.deleteObject(window.cacStorage.storageRef(window.cacStorage.storage, base.storagePath)); } catch (storageErr) {
-                            if (storageErr?.code !== 'storage/object-not-found') throw storageErr;
-                        }
-                    }
                     await deleteDoc(doc(window.db, 'baseDados', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Base de Dados', { id: deleteTarget.id, nome: base.name });
-                    showToast("Base de dados removida da nuvem.", "success");
+                    showToast("Base de dados removida do Firestore.", "success");
                 }
                 closeModal('modal-confirm');
             } catch (err) {
@@ -2639,7 +2636,6 @@
             getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
             EmailAuthProvider, reauthenticateWithCredential, updatePassword, createUserWithEmailAndPassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyA4S6EbV3Z70a7tyk6F_VDgYE_k7ZuFBoQ",
@@ -2655,7 +2651,6 @@
         try { getAnalytics(app); } catch (_) {}
 
         const db = getFirestore(app);
-        const storage = getStorage(app);
         const auth = getAuth(app);
         const accessApp = initializeApp(firebaseConfig, 'cac-access-creator');
         const accessAuth = getAuth(accessApp);
@@ -2670,7 +2665,6 @@
         window.collection = collection;
         window.serverTimestamp = serverTimestamp;
         window.cacWriteBatch = writeBatch;
-        window.cacStorage = { storage, storageRef, uploadBytes, getDownloadURL, deleteObject };
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.EmailAuthProvider = EmailAuthProvider;
