@@ -1180,6 +1180,13 @@
             return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
         }
 
+        /*
+         * CAC ADMINISTRATOR
+         * The alias "admin" always maps to this Firebase Authentication email.
+         * The password is NEVER stored in this HTML; Firebase Authentication validates it.
+         */
+        const CAC_ADMIN_EMAIL = 'l.n.1999oficial@gmail.com';
+
         /* AUTENTICAÇÃO E PERMISSÕES — Firebase Authentication */
         function openLoginModal() { document.getElementById('modal-login').style.display = 'flex'; }
         function openChangePassModal() { document.getElementById('modal-change-pass').style.display = 'flex'; }
@@ -1204,7 +1211,7 @@
         async function handleForgotPassword() {
             if (!firebaseReady) return showToast("O Firebase ainda está inicializando.", "warning");
             const identifier = document.getElementById('login-user').value.trim();
-            if (!identifier) return showToast("Informe o e-mail ou usuário admin para recuperar a senha.", "warning");
+            if (!identifier) return showToast("Informe admin ou o e-mail da conta para recuperar a senha.", "warning");
             try {
                 const email = await resolveLoginEmail(identifier);
                 await sendPasswordResetEmail(window.firebaseAuth, email);
@@ -1748,7 +1755,9 @@
       - Firestore Security Rules deve controlar autorização de leitura/escrita.
       - O HTML não deve ser usado como mecanismo de segurança.
       - Fonte única de verdade: Firestore.
-      - Realtime obrigatório via onSnapshot para processos, servidores, config/seguranca e auditoria.
+      - Realtime obrigatório via onSnapshot para processos, servidores, configurações e auditoria.
+      - A conta da Coordenadoria é validada pelo Firebase Authentication; não criar senha fixa no HTML.
+      - O alias admin deve apontar para CAC_ADMIN_EMAIL e nunca depender de localStorage.
       - Para produção, configure regras do Firestore para permitir alterações administrativas somente ao UID do coordenador.
     -->
     <!-- FIREBASE: AUTENTICAÇÃO + FIRESTORE EM TEMPO REAL -->
@@ -1815,35 +1824,31 @@
 
         async function resolveLoginEmail(identifier) {
             const value = String(identifier || '').trim().toLowerCase();
+            if (!value) throw new Error('Informe o e-mail ou usuário.');
+            if (value === 'admin') return CAC_ADMIN_EMAIL;
             if (value.includes('@')) return value;
-            const security = window.cacSecurity || {};
-            if (value === 'admin') {
-                if (security.adminEmail) return String(security.adminEmail).trim().toLowerCase();
-                const coord = users.find(u => String(u.role || '').toLowerCase() === 'coordenador' && u.email);
-                if (coord?.email) return coord.email.toLowerCase();
-                return 'admin@cac-painel.firebaseapp.com';
-            }
-            const coord = users.find(u => String(u.role || '').toLowerCase() === 'coordenador' && u.email && String(u.email).toLowerCase() === value);
-            if (coord?.email) return coord.email.toLowerCase();
-            throw new Error('Informe o e-mail da conta no Firebase Authentication ou use admin.');
-        }
 
+            const coord = users.find(u =>
+                String(u.role || '').toLowerCase() === 'coordenador' &&
+                u.email && String(u.email).toLowerCase() === value
+            );
+            if (coord?.email) return coord.email.toLowerCase();
+            throw new Error('Use admin ou o e-mail cadastrado no Firebase Authentication.');
+        }
         window.resolveLoginEmail = resolveLoginEmail;
 
         onAuthStateChanged(auth, async (user) => {
             currentUser = user || null;
             isCoordenador = false;
 
-            try {
-                const securitySnap = await getDocs(collection(db, 'config'));
-                const security = securitySnap.docs.find(d => d.id === 'seguranca')?.data() || {};
-                const coordByEmail = !!user && security.adminEmail && String(security.adminEmail).toLowerCase() === String(user.email || '').toLowerCase();
-                const coordByRole = !!user && users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(user.email || '').toLowerCase());
-                isCoordenador = !!user && (security.adminUid === user.uid || coordByEmail || coordByRole);
-                window.cacSecurity = security;
-            } catch (err) {
-                console.error('Falha ao carregar configuração de segurança:', err);
-            }
+            // A conta administrativa é reconhecida pelo e-mail do Firebase Authentication.
+            // Não depende de cadastro prévio em config/seguranca.
+            const coordByEmail = !!user && String(user.email || '').toLowerCase() === CAC_ADMIN_EMAIL;
+            const coordByRole = !!user && users.some(u =>
+                String(u.role || '').toLowerCase() === 'coordenador' &&
+                String(u.email || '').toLowerCase() === String(user.email || '').toLowerCase()
+            );
+            isCoordenador = !!user && (coordByEmail || coordByRole);
 
             updateRoleUI();
             setSyncStatus('loading', 'Sincronizando...');
@@ -1896,8 +1901,9 @@
                 snapshot => {
                     window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
                     if (currentUser) {
-                        const sec = window.cacSecurity || {};
-                        isCoordenador = sec.adminUid === currentUser.uid || (sec.adminEmail && String(sec.adminEmail).toLowerCase() === String(currentUser.email || '').toLowerCase()) || users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(currentUser.email || '').toLowerCase());
+                        const byAdminEmail = String(currentUser.email || '').toLowerCase() === CAC_ADMIN_EMAIL;
+                        const byRole = users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(currentUser.email || '').toLowerCase());
+                        isCoordenador = byAdminEmail || byRole;
                         updateRoleUI();
                     }
                 },
