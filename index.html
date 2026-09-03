@@ -709,11 +709,6 @@
                         <div class="kpi-value" id="kpi-prazo-rate">0%</div>
                         <div class="kpi-subtext">Finalizados / Ativos no prazo</div>
                     </div>
-                    <div class="kpi-card">
-                        <div class="kpi-header"><span>TMA Real (Atribuição)</span><i class="fa-solid fa-stopwatch" style="color:var(--info)"></i></div>
-                        <div class="kpi-value" id="kpi-tma">0h</div>
-                        <div class="kpi-subtext">Tempo médio por servidor</div>
-                    </div>
                 </div>
 
                 <div class="charts-grid">
@@ -763,6 +758,18 @@
                             <i class="fa-solid fa-plus"></i> Registrar Nova Demanda
                         </button>
                     </div>
+                    <div id="overdue-alert-panel" class="insight-card" style="margin-bottom:16px;display:none;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                            <div>
+                                <h3 style="margin-bottom:6px;"><i class="fa-solid fa-bell"></i> Alertas de Prazo</h3>
+                                <div id="overdue-alert-summary" class="insight-detail">Nenhuma demanda atrasada.</div>
+                            </div>
+                            <button id="btn-email-overdue" class="btn btn-outline admin-only" onclick="prepareOverdueEmail()" style="display:none;">
+                                <i class="fa-solid fa-envelope"></i> Preparar alerta por e-mail
+                            </button>
+                        </div>
+                        <div id="overdue-alert-list" class="risk-list" style="margin-top:12px;"></div>
+                    </div>
                     <div class="table-responsive">
                         <table>
                             <thead>
@@ -775,7 +782,7 @@
                                     <th>SLA Regimental</th>
                                     <th>Status</th>
                                     <th>Tempo Restante / SLA</th>
-                                    <th class="admin-only">Ações</th>
+                                    <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="tbl-processos"></tbody>
@@ -815,7 +822,7 @@
             <div id="sec-usuarios" class="view-section">
                 <div class="card-block">
                     <div class="card-header">
-                        <h3>Equipe do CAC</h3>
+                        <h3>Equipe da CAC</h3>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn-outline admin-only" onclick="openAccessModal()">
                                 <i class="fa-solid fa-user-shield"></i> Novo acesso
@@ -1102,13 +1109,16 @@
         let unsubAudit = null;
 
         /*
-         * CAC SYNC CONTRACT — NÃO REMOVER.
+         * CAC SYNC CONTRACT — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
+         * AVISO PARA FUTURAS MANUTENÇÕES: a sincronização em tempo real está validada e é parte estrutural do sistema.
          * Regra permanente para futuras manutenções deste HTML:
          * 1) Dados operacionais devem viver no Firestore, nunca em localStorage/sessionStorage/indexedDB.
          * 2) Toda coleção que afeta o sistema deve usar onSnapshot para atualização em tempo real.
          * 3) Toda gravação deve usar addDoc/updateDoc/setDoc/deleteDoc no Firestore.
          * 4) Alterações administrativas e de configuração também devem ser sincronizadas.
          * 5) A interface é apenas uma visão do Firestore; não deve criar uma "fonte local" paralela.
+         * 6) Se este HTML for alterado no futuro, preserve as importações, onSnapshot e funções de escrita acima/abaixo.
+         * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
             enabled: true,
@@ -1177,49 +1187,64 @@
             setTimeout(() => toast.remove(), 3200);
         }
 
-        /* PRAZOS REGIMENTAIS & SLA */
-        function getPrazoStatus(p) {
+        /* PRAZOS REGIMENTAIS & SLA — calculados exclusivamente a partir da atribuição */
+        function toDateSafe(value) {
+            if (!value) return null;
+            if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+            if (typeof value?.toDate === 'function') { const d = value.toDate(); return isNaN(d.getTime()) ? null : d; }
+            if (typeof value === 'object' && typeof value.seconds === 'number') {
+                const d = new Date(value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1e6));
+                return isNaN(d.getTime()) ? null : d;
+            }
+            const raw = String(value).trim();
+            if (!raw) return null;
+            // datetime-local: interpretar no fuso horário local do navegador, sem deslocamento UTC.
+            const d = new Date(raw.length === 16 ? raw + ':00' : raw);
+            return isNaN(d.getTime()) ? null : d;
+        }
+
+        function getAssignedDate(p) {
+            return toDateSafe(p?.assignedAt) || toDateSafe(p?.atribuidoEm) || toDateSafe(p?.assignedDate);
+        }
+
+        function getPrazoStatus(p, now = new Date()) {
+            const assignedDate = getAssignedDate(p);
+            if (!assignedDate) {
+                return { label: 'Atribuição não informada', class: 'prazo-warn', expired: false, invalid: true, remainingHours: null, text: 'Defina a data de atribuição' };
+            }
+            const limitHours = Number(TARGET_HOURS[p.priority] || TARGET_HOURS['Média']);
+            const dueTime = assignedDate.getTime() + limitHours * 60 * 60 * 1000;
+            const diffHours = (dueTime - now.getTime()) / 3600000;
+
             if (p.status === 'Concluído') {
-                return { label: 'Concluído no Prazo', class: 'prazo-ok', expired: false, remainingHours: 0 };
+                const concludedDate = toDateSafe(p.completedAt) || toDateSafe(p.updatedAt);
+                const concludedOnTime = concludedDate ? concludedDate.getTime() <= dueTime : diffHours >= 0;
+                return { label: concludedOnTime ? 'Concluído no Prazo' : 'Concluído com Atraso', class: concludedOnTime ? 'prazo-ok' : 'prazo-expired', expired: !concludedOnTime, completed: true, remainingHours: 0, dueDate: new Date(dueTime), text: concludedOnTime ? 'dentro do prazo' : 'prazo ultrapassado' };
             }
 
-            const limitHours = TARGET_HOURS[p.priority] || 72;
-            const assignedTime = new Date(p.assignedAt || Date.now()).getTime();
-            const nowTime = new Date().getTime();
-
-            const elapsedHours = (nowTime - assignedTime) / (1000 * 60 * 60);
-            const remainingHours = Math.round(limitHours - elapsedHours);
-
-            if (remainingHours < 0) {
-                return { 
-                    label: 'Prazo Excedido', 
-                    class: 'prazo-expired', 
-                    expired: true, 
-                    text: `${Math.abs(remainingHours)}h em atraso`,
-                    elapsedHours
-                };
-            } else if (remainingHours <= 24) {
-                return { 
-                    label: 'Atenção ao Prazo', 
-                    class: 'prazo-warn', 
-                    expired: false, 
-                    text: `${remainingHours}h restantes`,
-                    elapsedHours
-                };
-            } else {
-                return { 
-                    label: 'No Prazo', 
-                    class: 'prazo-ok', 
-                    expired: false, 
-                    text: `${remainingHours}h restantes`,
-                    elapsedHours
-                };
+            const remainingHours = Math.ceil(diffHours);
+            if (diffHours < 0) {
+                return { label: 'Prazo Excedido', class: 'prazo-expired', expired: true, remainingHours, dueDate: new Date(dueTime), text: formatDuration(Math.abs(diffHours)) + ' em atraso' };
             }
+            if (diffHours <= 24) {
+                return { label: 'Atenção ao Prazo', class: 'prazo-warn', expired: false, remainingHours, dueDate: new Date(dueTime), text: formatDuration(diffHours) + ' restantes' };
+            }
+            return { label: 'No Prazo', class: 'prazo-ok', expired: false, remainingHours, dueDate: new Date(dueTime), text: formatDuration(diffHours) + ' restantes' };
+        }
+
+        function formatDuration(hours) {
+            const totalMinutes = Math.max(0, Math.round(hours * 60));
+            const days = Math.floor(totalMinutes / 1440);
+            const hrs = Math.floor((totalMinutes % 1440) / 60);
+            const mins = totalMinutes % 60;
+            if (days > 0) return `${days}d ${hrs}h`;
+            if (hrs > 0) return `${hrs}h ${mins}min`;
+            return `${mins}min`;
         }
 
         function formatDate(dateString) {
-            if (!dateString) return 'Não informada';
-            const d = new Date(dateString);
+            const d = toDateSafe(dateString);
+            if (!d) return 'Não informada';
             return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
         }
 
@@ -1294,28 +1319,51 @@
             if (window.firebaseSignOut) window.firebaseSignOut(window.firebaseAuth);
         }
 
+        function getCurrentProfile() {
+            if (!currentUser) return null;
+            return users.find(u => normalizeId(u.id) === normalizeId(currentUser.uid)) || users.find(u => normalizeId(u.authUid) === normalizeId(currentUser.uid)) || null;
+        }
+
+        function isServidor() {
+            const profile = getCurrentProfile();
+            return !!currentUser && !isCoordenador && String(profile?.role || '').toLowerCase() === 'servidor';
+        }
+
+        function canEditProcess(p) {
+            if (isCoordenador) return true;
+            if (!isServidor()) return false;
+            const myUid = normalizeId(currentUser.uid);
+            return normalizeId(p.userId) === myUid || normalizeId(p.authUid) === myUid;
+        }
+
+        function canDeleteProcess(p) { return canEditProcess(p); }
+
         function updateRoleUI() {
             const badge = document.getElementById('user-role-badge');
             const roleLbl = document.getElementById('lbl-user-role');
             const btnLogin = document.getElementById('btn-login-trigger');
             const btnLogout = document.getElementById('btn-logout-trigger');
             const btnChangePass = document.getElementById('btn-change-pass');
+            const profile = getCurrentProfile();
+            const servidorLogado = isServidor();
 
             if (isCoordenador) {
                 badge.className = 'role-badge admin';
                 roleLbl.innerText = currentUser?.email ? `Coordenador · ${currentUser.email}` : 'Coordenador';
-                btnLogin.style.display = 'none';
-                btnLogout.style.display = 'flex';
-                btnChangePass.style.display = 'flex';
+                btnLogin.style.display = 'none'; btnLogout.style.display = 'flex'; btnChangePass.style.display = 'flex';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+            } else if (servidorLogado) {
+                badge.className = 'role-badge visitor';
+                roleLbl.innerText = profile?.name ? `Servidor · ${profile.name}` : 'Servidor';
+                btnLogin.style.display = 'none'; btnLogout.style.display = 'flex'; btnChangePass.style.display = 'none';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
             } else {
                 badge.className = 'role-badge visitor';
                 roleLbl.innerText = 'Modo Visitante';
-                btnLogin.style.display = 'flex';
-                btnLogout.style.display = 'none';
-                btnChangePass.style.display = 'none';
+                btnLogin.style.display = 'flex'; btnLogout.style.display = 'none'; btnChangePass.style.display = 'none';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
             }
+            renderProcessTable(processes);
         }
 
         /* NAVEGAÇÃO VIA MENU */
@@ -1415,23 +1463,16 @@
             const prazoRate = total > 0 ? Math.round(((total - prazosExcedidos) / total) * 100) : 100;
             const concluidosRate = total > 0 ? Math.round((concluidos / total) * 100) : 0;
 
-            let totalHoursElapsed = 0;
-            data.forEach(p => {
-                const prazo = getPrazoStatus(p);
-                totalHoursElapsed += (prazo.elapsedHours || 0);
-            });
-            const tma = total > 0 ? Math.round(totalHoursElapsed / total) : 0;
-
             document.getElementById('kpi-total').innerText = total;
             document.getElementById('kpi-concluidos').innerText = concluidos;
             document.getElementById('kpi-concluidos-rate').innerText = `${concluidosRate}% de resolutividade`;
             document.getElementById('kpi-andamento').innerText = andamento;
             document.getElementById('kpi-pendentes').innerText = pendentes;
             document.getElementById('kpi-prazo-rate').innerText = `${prazoRate}%`;
-            document.getElementById('kpi-tma').innerText = `${tma}h`;
 
             updateCharts(data);
             updateExecutiveInsights(data);
+            renderOverdueAlerts();
         }
 
         function updateExecutiveInsights(data) {
@@ -1536,14 +1577,14 @@
                         <td><strong>${p.priority || 'Média'}</strong></td>
                         <td><span class="badge ${getStatusBadge(p.status)}">${p.status}</span></td>
                         <td><span class="badge ${prazo.class}">${prazo.label} ${prazo.text ? `(${prazo.text})` : ''}</span></td>
-                        <td class="admin-only">
-                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${JSON.stringify(p.id)})"></i>
-                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${JSON.stringify(p.id)})"></i>
+                        <td class="process-actions">
+                            ${canEditProcess(p) ? `<i class="fa-solid fa-pen-to-square" title="Alterar demanda" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${JSON.stringify(p.id)})"></i>` : ''}
+                            ${canDeleteProcess(p) ? `<i class="fa-solid fa-trash" title="Excluir demanda" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${JSON.stringify(p.id)})"></i>` : ''}
+                            ${!canEditProcess(p) ? '<span style="color:var(--text-muted);font-size:11px;">Somente leitura</span>' : ''}
                         </td>
                     </tr>
                 `;
             });
-            updateRoleUI();
         }
 
         function renderUserTable() {
@@ -1610,10 +1651,12 @@
 
         async function saveProcess(e) {
             e.preventDefault();
-            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
             const id = document.getElementById('proc-id').value;
+            const existing = id ? processes.find(p => normalizeId(p.id) === normalizeId(id)) : null;
+            if (!isCoordenador && !canEditProcess(existing || {})) return showToast("Você só pode alterar demandas atribuídas à sua conta.", "danger");
             const procData = {
                 userId: normalizeId(document.getElementById('proc-servidor').value),
+                authUid: users.find(u => normalizeId(u.id) === normalizeId(document.getElementById('proc-servidor').value))?.authUid || normalizeId(document.getElementById('proc-servidor').value),
                 system: document.getElementById('proc-sistema').value,
                 protocol: document.getElementById('proc-protocolo').value.trim(),
                 desc: document.getElementById('proc-desc').value.trim(),
@@ -1626,6 +1669,15 @@
                 updatedAt: serverTimestamp(),
                 updatedBy: currentUser?.uid || null
             };
+            if (!isCoordenador && existing) {
+                procData.userId = existing.userId;
+                procData.authUid = existing.authUid || normalizeId(existing.userId);
+                procData.assignedAt = existing.assignedAt;
+                procData.priority = existing.priority || procData.priority;
+                procData.system = existing.system || procData.system;
+                procData.protocol = existing.protocol || procData.protocol;
+            }
+            if (procData.status === 'Concluído' && (!existing || existing.status !== 'Concluído')) procData.completedAt = new Date().toISOString();
 
             try {
                 if (id) {
@@ -1647,6 +1699,7 @@
         function editProcess(id) {
             const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
             if (!proc) return;
+            if (!canEditProcess(proc)) return showToast("Você não tem permissão para alterar esta demanda.", "danger");
 
             document.getElementById('proc-id').value = proc.id;
             document.getElementById('proc-servidor').value = proc.userId;
@@ -1686,13 +1739,27 @@
 
             try {
                 const cred = await createUserWithEmailAndPassword(accessAuth, email, password);
-                await setDoc(doc(window.db, 'servidores', cred.user.uid), {
-                    name, email, role, authUid: cred.user.uid,
-                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-                }, { merge: true });
+                const existingProfile = users.find(u => String(u.email || '').trim().toLowerCase() === email);
+
+                if (existingProfile && role === 'Servidor') {
+                    // Aproveita o cadastro já existente e apenas vincula a conta de autenticação.
+                    await setDoc(doc(window.db, 'servidores', existingProfile.id), {
+                        name, email, role, authUid: cred.user.uid, updatedAt: serverTimestamp()
+                    }, { merge: true });
+                    const linked = processes.filter(p => normalizeId(p.userId) === normalizeId(existingProfile.id));
+                    for (const proc of linked) {
+                        await updateDoc(doc(window.db, 'processos', proc.id), { authUid: cred.user.uid, updatedAt: serverTimestamp() });
+                    }
+                } else {
+                    // Perfis de Coordenador precisam ter o UID como ID do documento para que as regras de segurança consigam autorizá-los.
+                    await setDoc(doc(window.db, 'servidores', cred.user.uid), {
+                        name, email, role, authUid: cred.user.uid,
+                        createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
 
                 await signOut(accessAuth);
-                await writeAudit('CRIAÇÃO', 'Acesso', { nome: name, email, perfil: role });
+                await writeAudit('CRIAÇÃO', 'Acesso', { nome: name, email, perfil: role, perfilExistenteVinculado: !!existingProfile });
                 closeModal('modal-access');
                 showToast("Novo acesso criado com sucesso.", "success");
             } catch (err) {
@@ -1755,7 +1822,12 @@
 
         /* EXCLUSÃO COM VALIDAÇÃO DE INTEGRIDADE */
         function confirmDelete(type, id) {
-            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
+            if (type === 'process') {
+                const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
+                if (!proc || !canDeleteProcess(proc)) return showToast("Você não tem permissão para excluir esta demanda.", "danger");
+            } else if (!isCoordenador) {
+                return showToast("Acesso de coordenador necessário.", "danger");
+            }
             deleteTarget = { type, id: normalizeId(id) };
             const msgLbl = document.getElementById('lbl-confirm-msg');
             if (type === 'user') {
@@ -1771,8 +1843,13 @@
         }
 
         async function executeDelete() {
-            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
             try {
+                if (deleteTarget.type === 'process') {
+                    const proc = processes.find(p => normalizeId(p.id) === normalizeId(deleteTarget.id));
+                    if (!proc || !canDeleteProcess(proc)) throw new Error('Você não tem permissão para excluir esta demanda.');
+                } else if (!isCoordenador) {
+                    throw new Error('Acesso de coordenador necessário.');
+                }
                 if (deleteTarget.type === 'process') {
                     await deleteDoc(doc(window.db, 'processos', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Demanda', { id: deleteTarget.id });
@@ -1820,6 +1897,51 @@
                 return `<tr><td>${dt ? dt.toLocaleString('pt-BR') : 'Processando…'}</td><td class="audit-action">${a.action || '—'}</td><td>${a.area || '—'}</td><td>${a.userEmail || '—'}</td><td class="audit-detail">${details || '—'}</td></tr>`;
             }).join('');
         }
+
+        function renderOverdueAlerts() {
+            const panel = document.getElementById('overdue-alert-panel');
+            const summary = document.getElementById('overdue-alert-summary');
+            const list = document.getElementById('overdue-alert-list');
+            if (!panel || !summary || !list) return;
+            const active = processes.map(p => ({p, prazo:getPrazoStatus(p)})).filter(x => x.p.status !== 'Concluído');
+            const overdue = active.filter(x => x.prazo.expired);
+            const attention = active.filter(x => !x.prazo.expired && !x.prazo.invalid && x.prazo.remainingHours <= 24);
+            panel.style.display = (overdue.length || attention.length) ? 'block' : 'none';
+            summary.textContent = overdue.length ? `${overdue.length} demanda(s) com prazo excedido${attention.length ? ` e ${attention.length} em atenção.` : '.'}` : `${attention.length} demanda(s) vencendo em até 24h.`;
+            const rows = [];
+            overdue.slice(0,8).forEach(({p,prazo}) => {
+                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
+                rows.push(`<div class="risk-item"><span><strong>${u?.name || 'Não atribuído'}</strong> · ${p.protocol || 'Sem protocolo'}</span><span class="badge badge-danger">${prazo.text}</span></div>`);
+            });
+            attention.slice(0,8).forEach(({p,prazo}) => {
+                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
+                rows.push(`<div class="risk-item"><span><strong>${u?.name || 'Não atribuído'}</strong> · ${p.protocol || 'Sem protocolo'}</span><span class="badge badge-warning">${prazo.text}</span></div>`);
+            });
+            list.innerHTML = rows.join('') || '<div class="insight-detail">Nenhum alerta ativo.</div>';
+            const btn = document.getElementById('btn-email-overdue');
+            if (btn) btn.style.display = (isCoordenador && overdue.length) ? 'flex' : 'none';
+        }
+
+        function refreshDeadlineView() {
+            applyFilters();
+            renderOverdueAlerts();
+        }
+
+        function prepareOverdueEmail() {
+            if (!isCoordenador) return showToast('Acesso de coordenador necessário.', 'danger');
+            const overdue = processes.map(p => ({p, prazo:getPrazoStatus(p)})).filter(x => x.p.status !== 'Concluído' && x.prazo.expired);
+            if (!overdue.length) return showToast('Não há demandas atrasadas para alertar.', 'info');
+            const body = overdue.map(({p,prazo}) => {
+                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
+                return `Servidor: ${u?.name || 'Não atribuído'} | Protocolo: ${p.protocol || '-'} | Atraso: ${prazo.text}`;
+            }).join('\n');
+            const subject = `Alerta CAC — ${overdue.length} demanda(s) com prazo excedido`;
+            const mailto = `mailto:${encodeURIComponent(CAC_ADMIN_EMAIL)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.location.href = mailto;
+            showToast('O alerta foi preparado no aplicativo de e-mail padrão.', 'success');
+        }
+
+        setInterval(refreshDeadlineView, 60000);
 
         function exportCSV() {
             let csv = 'Servidor;Origem;Protocolo;Descricao;Data_Atribuicao;SLA_Prioridade;Ano;Mes;Semana;Status;Situacao_SLA\n';
@@ -1994,9 +2116,8 @@
                 snapshot => {
                     window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
                     if (currentUser) {
-                        const byAdminEmail = String(currentUser.email || '').toLowerCase() === CAC_ADMIN_EMAIL;
-                        const byRole = users.some(u => String(u.role || '').toLowerCase() === 'coordenador' && String(u.email || '').toLowerCase() === String(currentUser.email || '').toLowerCase());
-                        isCoordenador = byAdminEmail || byRole;
+                        const byAdminEmail = String(currentUser.email || '').trim().toLowerCase() === String(CAC_ADMIN_EMAIL).trim().toLowerCase();
+                        isCoordenador = byAdminEmail || users.some(u => normalizeId(u.id) === normalizeId(currentUser.uid) && String(u.role || '').toLowerCase() === 'coordenador');
                         updateRoleUI();
                     }
                 },
