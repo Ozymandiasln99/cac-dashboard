@@ -1133,6 +1133,8 @@
          * 5) A interface é apenas uma visão do Firestore; não deve criar uma "fonte local" paralela.
          * 6) Se este HTML for alterado no futuro, preserve as importações, onSnapshot e funções de escrita acima/abaixo.
          * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
+         * 8) NÃO iniciar listeners onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
+         * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
             enabled: true,
@@ -2201,6 +2203,18 @@
             return info;
         };
 
+        /*
+         * CORREÇÃO PERMANENTE — INICIALIZAÇÃO DA SINCRONIZAÇÃO
+         * NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
+         *
+         * O Firebase pode disparar onAuthStateChanged primeiro com user = null
+         * enquanto restaura a sessão persistida. Nunca iniciar onSnapshot nesse
+         * estado, pois as Security Rules exigem usuário autenticado e isso gerava
+         * os dois avisos de "Não foi possível sincronizar" durante o recarregamento.
+         *
+         * Regra: somente iniciar os listeners do Firestore depois que houver
+         * currentUser autenticado. Ao sair, os listeners são encerrados.
+         */
         onAuthStateChanged(auth, async (user) => {
             currentUser = user || null;
             const emailAtual = String(user?.email || '').trim().toLowerCase();
@@ -2216,6 +2230,22 @@
             };
 
             updateRoleUI();
+
+            // NÃO assinar Firestore antes da autenticação estar restaurada.
+            // Isso evita permission-denied durante o F5/recarregamento.
+            if (!user) {
+                if (unsubProcessos) { unsubProcessos(); unsubProcessos = null; }
+                if (unsubServidores) { unsubServidores(); unsubServidores = null; }
+                if (unsubConfig) { unsubConfig(); unsubConfig = null; }
+                if (unsubAudit) { unsubAudit(); unsubAudit = null; }
+                processes = [];
+                users = [];
+                auditLogs = [];
+                setSyncStatus('idle', 'Aguardando autenticação');
+                applyFilters();
+                return;
+            }
+
             setSyncStatus('loading', 'Sincronizando...');
             subscribeData();
         });
