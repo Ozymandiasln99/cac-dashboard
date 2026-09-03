@@ -574,7 +574,7 @@
         </div>
         <div style="font-size: 11px; color: var(--text-muted); padding-top: 14px; border-top: 1px solid var(--border);">
             <p><strong>Gestão da CAC</strong></p>
-            <p>Controle e acompanhamento de demandas</p>
+            <p>Controle de Alta Produtividade da CAC</p>
         </div>
     </aside>
 
@@ -1321,22 +1321,44 @@
 
         function getCurrentProfile() {
             if (!currentUser) return null;
-            return users.find(u => normalizeId(u.id) === normalizeId(currentUser.uid)) || users.find(u => normalizeId(u.authUid) === normalizeId(currentUser.uid)) || null;
+            const uid = normalizeId(currentUser.uid);
+            return users.find(u => normalizeId(u.id) === uid)
+                || users.find(u => normalizeId(u.authUid) === uid)
+                || null;
+        }
+
+        // REGRA DEFINITIVA DE AUTORIZAÇÃO DA INTERFACE:
+        // somente Coordenadores podem criar, alterar ou excluir demandas e servidores.
+        // Servidores possuem acesso operacional, mas nunca ações administrativas.
+        function isCurrentUserCoordinator() {
+            if (!currentUser) return false;
+            const email = String(currentUser.email || '').trim().toLowerCase();
+            const adminEmail = String(CAC_ADMIN_EMAIL || '').trim().toLowerCase();
+            if (email && email === adminEmail) return true;
+
+            const uid = normalizeId(currentUser.uid);
+            const profile = users.find(u => normalizeId(u.id) === uid)
+                || users.find(u => normalizeId(u.authUid) === uid);
+            return String(profile?.role || '').trim().toLowerCase() === 'coordenador';
+        }
+
+        function syncCoordinatorState() {
+            isCoordenador = isCurrentUserCoordinator();
+            return isCoordenador;
         }
 
         function isServidor() {
             const profile = getCurrentProfile();
-            return !!currentUser && !isCoordenador && String(profile?.role || '').toLowerCase() === 'servidor';
+            return !!currentUser && !syncCoordinatorState() && String(profile?.role || '').trim().toLowerCase() === 'servidor';
         }
 
         function canEditProcess(p) {
-            if (isCoordenador) return true;
-            if (!isServidor()) return false;
-            const myUid = normalizeId(currentUser.uid);
-            return normalizeId(p.userId) === myUid || normalizeId(p.authUid) === myUid;
+            return syncCoordinatorState() && !!p;
         }
 
-        function canDeleteProcess(p) { return canEditProcess(p); }
+        function canDeleteProcess(p) {
+            return syncCoordinatorState() && !!p;
+        }
 
         function updateRoleUI() {
             const badge = document.getElementById('user-role-badge');
@@ -1344,6 +1366,7 @@
             const btnLogin = document.getElementById('btn-login-trigger');
             const btnLogout = document.getElementById('btn-logout-trigger');
             const btnChangePass = document.getElementById('btn-change-pass');
+            syncCoordinatorState();
             const profile = getCurrentProfile();
             const servidorLogado = isServidor();
 
@@ -1653,7 +1676,7 @@
             e.preventDefault();
             const id = document.getElementById('proc-id').value;
             const existing = id ? processes.find(p => normalizeId(p.id) === normalizeId(id)) : null;
-            if (!isCoordenador && !canEditProcess(existing || {})) return showToast("Você só pode alterar demandas atribuídas à sua conta.", "danger");
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem criar ou alterar demandas.", "danger");
             const procData = {
                 userId: normalizeId(document.getElementById('proc-servidor').value),
                 authUid: users.find(u => normalizeId(u.id) === normalizeId(document.getElementById('proc-servidor').value))?.authUid || normalizeId(document.getElementById('proc-servidor').value),
@@ -1699,7 +1722,7 @@
         function editProcess(id) {
             const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
             if (!proc) return;
-            if (!canEditProcess(proc)) return showToast("Você não tem permissão para alterar esta demanda.", "danger");
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar demandas.", "danger");
 
             document.getElementById('proc-id').value = proc.id;
             document.getElementById('proc-servidor').value = proc.userId;
@@ -1782,7 +1805,7 @@
 
         async function saveUser(e) {
             e.preventDefault();
-            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar servidores.", "danger");
             const id = document.getElementById('usr-id').value;
             const userData = {
                 name: document.getElementById('usr-nome').value.trim(),
@@ -1809,6 +1832,7 @@
         }
 
         function editUser(id) {
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar servidores.", "danger");
             const usr = users.find(u => normalizeId(u.id) === normalizeId(id));
             if (!usr) return;
 
@@ -1822,11 +1846,10 @@
 
         /* EXCLUSÃO COM VALIDAÇÃO DE INTEGRIDADE */
         function confirmDelete(type, id) {
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem excluir registros.", "danger");
             if (type === 'process') {
                 const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
                 if (!proc || !canDeleteProcess(proc)) return showToast("Você não tem permissão para excluir esta demanda.", "danger");
-            } else if (!isCoordenador) {
-                return showToast("Acesso de coordenador necessário.", "danger");
             }
             deleteTarget = { type, id: normalizeId(id) };
             const msgLbl = document.getElementById('lbl-confirm-msg');
@@ -1844,11 +1867,10 @@
 
         async function executeDelete() {
             try {
+                if (!syncCoordinatorState()) throw new Error('Somente Coordenadores podem excluir registros.');
                 if (deleteTarget.type === 'process') {
                     const proc = processes.find(p => normalizeId(p.id) === normalizeId(deleteTarget.id));
                     if (!proc || !canDeleteProcess(proc)) throw new Error('Você não tem permissão para excluir esta demanda.');
-                } else if (!isCoordenador) {
-                    throw new Error('Acesso de coordenador necessário.');
                 }
                 if (deleteTarget.type === 'process') {
                     await deleteDoc(doc(window.db, 'processos', deleteTarget.id));
@@ -1879,6 +1901,7 @@
         }
 
         function openUserModal() {
+            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem cadastrar servidores.", "danger");
             document.getElementById('form-usuario').reset();
             document.getElementById('usr-id').value = '';
             document.getElementById('modal-usuario').style.display = 'flex';
