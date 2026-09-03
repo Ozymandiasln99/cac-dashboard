@@ -1114,6 +1114,9 @@
         let adminAuth = { user: "", email: "" };
         let users = [];
         let processes = [];
+        // RECORTE ATUAL DOS FILTROS — fonte única para Demandas, Painel e Relatório.
+        // NÃO remover: evita que cada aba use um conjunto diferente de demandas.
+        let filteredProcesses = [];
         let isCoordenador = false;
         let currentUser = null;
         let deleteTarget = { type: null, id: null };
@@ -1562,10 +1565,13 @@
                 return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
             });
 
-            updateMetrics(visibleProcesses);
-            renderProcessTable(filtered);
+            // O mesmo recorte filtrado alimenta as três áreas.
+            // Demandas = tabela; Painel = KPIs/gráficos; Relatório = consolidação.
+            filteredProcesses = filtered.slice();
+            updateMetrics(filteredProcesses);
+            renderProcessTable(filteredProcesses);
             renderUserTable();
-            renderReportSummary();
+            renderReportSummary(filteredProcesses);
         }
 
         function updateMetrics(data) {
@@ -1794,12 +1800,23 @@
             if (action === 'delete') confirmDelete('user', id);
         });
 
-        function renderReportSummary() {
+        /*
+         * REGRA PERMANENTE — PAINEL / FILTROS / RELATÓRIO
+         * NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
+         * Todos os indicadores, gráficos, alertas e o Relatório Gerencial devem
+         * consumir filteredProcesses, que é produzido exclusivamente por applyFilters().
+         * A tabela de Demandas também consome o mesmo recorte.
+         * Não voltar a usar getCurrentVisibleProcesses() diretamente nessas áreas,
+         * pois isso ignora os filtros ativos.
+         */
+        function renderReportSummary(data = filteredProcesses) {
             const tbody = document.getElementById('tbl-report-summary');
+            if (!tbody) return;
             tbody.innerHTML = '';
 
+            const source = Array.isArray(data) ? data : [];
             getCurrentVisibleUsers().forEach(u => {
-                const uProcs = getCurrentVisibleProcesses().filter(p => p.userId == u.id);
+                const uProcs = source.filter(p => normalizeId(p.userId) === normalizeId(u.id) || normalizeId(p.authUid) === normalizeId(u.authUid));
                 const total = uProcs.length;
                 const sipac = uProcs.filter(p => p.system === 'SIPAC').length;
                 const sagitta = uProcs.filter(p => p.system === 'SAGITTA').length;
