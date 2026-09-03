@@ -1332,10 +1332,26 @@
         // Servidores possuem acesso operacional, mas nunca ações administrativas.
         function isCurrentUserCoordinator() {
             if (!currentUser) return false;
+
             const email = String(currentUser.email || '').trim().toLowerCase();
             const adminEmail = String(CAC_ADMIN_EMAIL || '').trim().toLowerCase();
+
+            // Conta principal: sempre Coordenador.
             if (email && email === adminEmail) return true;
 
+            // Cadastro centralizado de Coordenadores em config/seguranca.
+            const security = window.cacSecurity || {};
+            const coordinatorEmails = Array.isArray(security.coordinatorEmails)
+                ? security.coordinatorEmails.map(v => String(v).trim().toLowerCase())
+                : [];
+            const coordinatorUids = Array.isArray(security.coordinatorUids)
+                ? security.coordinatorUids.map(v => normalizeId(v))
+                : [];
+
+            if (email && coordinatorEmails.includes(email)) return true;
+            if (currentUser.uid && coordinatorUids.includes(normalizeId(currentUser.uid))) return true;
+
+            // Compatibilidade com cadastros já existentes.
             const uid = normalizeId(currentUser.uid);
             const profile = users.find(u => normalizeId(u.id) === uid)
                 || users.find(u => normalizeId(u.authUid) === uid);
@@ -1347,17 +1363,30 @@
             return isCoordenador;
         }
 
+        function requireCoordinator(action = 'realizar esta ação') {
+            syncCoordinatorState();
+            if (!currentUser) {
+                showToast('Faça login como Coordenador para ' + action + '.', 'danger');
+                return false;
+            }
+            if (!isCoordenador) {
+                showToast('Somente Coordenadores podem ' + action + '.', 'danger');
+                return false;
+            }
+            return true;
+        }
+
         function isServidor() {
             const profile = getCurrentProfile();
             return !!currentUser && !syncCoordinatorState() && String(profile?.role || '').trim().toLowerCase() === 'servidor';
         }
 
         function canEditProcess(p) {
-            return syncCoordinatorState() && !!p;
+            return !!p && requireCoordinator('alterar demandas');
         }
 
         function canDeleteProcess(p) {
-            return syncCoordinatorState() && !!p;
+            return !!p && requireCoordinator('excluir demandas');
         }
 
         function updateRoleUI() {
@@ -1676,7 +1705,7 @@
             e.preventDefault();
             const id = document.getElementById('proc-id').value;
             const existing = id ? processes.find(p => normalizeId(p.id) === normalizeId(id)) : null;
-            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem criar ou alterar demandas.", "danger");
+            if (!requireCoordinator('criar ou alterar demandas')) return;
             const procData = {
                 userId: normalizeId(document.getElementById('proc-servidor').value),
                 authUid: users.find(u => normalizeId(u.id) === normalizeId(document.getElementById('proc-servidor').value))?.authUid || normalizeId(document.getElementById('proc-servidor').value),
@@ -1692,14 +1721,6 @@
                 updatedAt: serverTimestamp(),
                 updatedBy: currentUser?.uid || null
             };
-            if (!isCoordenador && existing) {
-                procData.userId = existing.userId;
-                procData.authUid = existing.authUid || normalizeId(existing.userId);
-                procData.assignedAt = existing.assignedAt;
-                procData.priority = existing.priority || procData.priority;
-                procData.system = existing.system || procData.system;
-                procData.protocol = existing.protocol || procData.protocol;
-            }
             if (procData.status === 'Concluído' && (!existing || existing.status !== 'Concluído')) procData.completedAt = new Date().toISOString();
 
             try {
@@ -1805,7 +1826,7 @@
 
         async function saveUser(e) {
             e.preventDefault();
-            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar servidores.", "danger");
+            if (!requireCoordinator('alterar servidores')) return;
             const id = document.getElementById('usr-id').value;
             const userData = {
                 name: document.getElementById('usr-nome').value.trim(),
@@ -1832,7 +1853,7 @@
         }
 
         function editUser(id) {
-            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem alterar servidores.", "danger");
+            if (!requireCoordinator('alterar servidores')) return;
             const usr = users.find(u => normalizeId(u.id) === normalizeId(id));
             if (!usr) return;
 
@@ -1846,7 +1867,7 @@
 
         /* EXCLUSÃO COM VALIDAÇÃO DE INTEGRIDADE */
         function confirmDelete(type, id) {
-            if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem excluir registros.", "danger");
+            if (!requireCoordinator('excluir registros')) return;
             if (type === 'process') {
                 const proc = processes.find(p => normalizeId(p.id) === normalizeId(id));
                 if (!proc || !canDeleteProcess(proc)) return showToast("Você não tem permissão para excluir esta demanda.", "danger");
@@ -1893,6 +1914,7 @@
         }
 
         function openProcessModal() {
+            if (!requireCoordinator('criar ou alterar demandas')) return;
             document.getElementById('form-processo').reset();
             document.getElementById('proc-id').value = '';
             document.getElementById('proc-atribuicao').value = new Date().toISOString().slice(0, 16);
@@ -2081,11 +2103,11 @@
 
             // A conta da Coordenadoria é identificada diretamente pelo e-mail definido no sistema.
             // Não depende de configuração administrativa, cadastro de servidor ou armazenamento local.
-            isCoordenador = !!user && emailAtual === emailCoordenadoria;
+            isCoordenador = !!user && (emailAtual === emailCoordenadoria || isCurrentUserCoordinator());
 
             adminAuth = {
                 user: isCoordenador ? 'admin' : '',
-                email: isCoordenador ? emailCoordenadoria : emailAtual
+                email: isCoordenador ? (emailAtual || emailCoordenadoria) : emailAtual
             };
 
             updateRoleUI();
@@ -2139,8 +2161,7 @@
                 snapshot => {
                     window.cacSecurity = snapshot.exists() ? snapshot.data() : {};
                     if (currentUser) {
-                        const byAdminEmail = String(currentUser.email || '').trim().toLowerCase() === String(CAC_ADMIN_EMAIL).trim().toLowerCase();
-                        isCoordenador = byAdminEmail || users.some(u => normalizeId(u.id) === normalizeId(currentUser.uid) && String(u.role || '').toLowerCase() === 'coordenador');
+                        isCoordenador = isCurrentUserCoordinator();
                         updateRoleUI();
                     }
                 },
