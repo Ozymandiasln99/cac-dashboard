@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Executivo de Gestão Integrada - CIAC</title>
+    <title>Painel Executivo de Gestão Integrada - CAC</title>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Google Fonts -->
@@ -504,16 +504,17 @@
         .view-section.active { display: flex; flex-direction: column; gap: 24px; }
 
         .print-header { display: none; }
-
-
-
-        #sync-status { font-size: 11px; padding: 6px 10px; white-space: nowrap; }
-        #sync-status.admin { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
-        body.dark-mode #sync-status.admin { background: #064e3b; color: #a7f3d0; border-color: #047857; }
         @media (max-width: 768px) {
-            #sync-status { max-width: 135px; overflow: hidden; text-overflow: ellipsis; }
-            #sync-status span { display: none; }
         }
+
+
+        .executive-strip{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px}
+        .insight-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px}
+        .insight-card h3{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+        .insight-main{font-size:18px;font-weight:800}.insight-detail{font-size:12px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+        .risk-list{display:flex;flex-direction:column;gap:8px;max-height:120px;overflow:auto}.risk-item{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px}
+        .progress-track{height:7px;background:var(--bg-main);border-radius:99px;overflow:hidden;margin-top:8px}.progress-fill{height:100%;border-radius:99px;background:var(--accent);transition:width .3s ease}
+        @media(max-width:1024px){.executive-strip{grid-template-columns:1fr 1fr}}@media(max-width:768px){.executive-strip{grid-template-columns:1fr}}
 
         /* RESPONSIVIDADE */
         @media (max-width: 1024px) {
@@ -558,7 +559,7 @@
         <div>
             <div class="logo-area">
                 <div class="logo-icon">C</div>
-                <h1>CIAC</h1>
+                <h1>CAC</h1>
             </div>
             <ul class="nav-links">
                 <li class="active"><a href="#" onclick="navigate('visao-geral', event)"><i class="fa-solid fa-chart-pie"></i> Painel Geral</a></li>
@@ -568,7 +569,7 @@
             </ul>
         </div>
         <div style="font-size: 11px; color: var(--text-muted); padding-top: 14px; border-top: 1px solid var(--border);">
-            <p><strong>CIAC Management 2.1</strong></p>
+            <p><strong>CAC Management 2.1</strong></p>
             <p>Controle Avançado de Produtividade</p>
         </div>
     </aside>
@@ -581,9 +582,6 @@
                 <h2 id="page-title">Painel Geral de Desempenho</h2>
             </div>
             <div class="header-actions">
-                <div id="sync-status" class="role-badge visitor" title="Status da sincronização">
-                    <i class="fa-solid fa-cloud"></i> <span id="lbl-sync-status">Conectando...</span>
-                </div>
                 <div id="user-role-badge" class="role-badge visitor">
                     <i class="fa-solid fa-eye"></i> <span id="lbl-user-role">Modo Visitante</span>
                 </div>
@@ -608,7 +606,7 @@
         <div class="content-body">
             
             <div class="print-header">
-                <h2>CIAC - Relatório Executivo de Produtividade e Desempenho</h2>
+                <h2>CAC - Relatório Executivo de Produtividade e Desempenho</h2>
                 <p>Gerado automaticamente pelo Sistema de Gestão de Demandas</p>
             </div>
 
@@ -732,6 +730,20 @@
                         <div class="chart-container"><canvas id="userChart"></canvas></div>
                     </div>
                 </div>
+                <div class="executive-strip">
+                    <div class="insight-card"><h3><i class="fa-solid fa-gauge-high"></i> Visão Executiva</h3>
+                        <div class="insight-main" id="insight-efficiency">0% de resolutividade</div>
+                        <div class="progress-track"><div class="progress-fill" id="insight-progress" style="width:0%"></div></div>
+                        <div class="insight-detail" id="insight-efficiency-detail">Aguardando dados do Firestore.</div>
+                    </div>
+                    <div class="insight-card"><h3><i class="fa-solid fa-triangle-exclamation"></i> Prioridades</h3>
+                        <div class="risk-list" id="insight-risks"><div class="insight-detail">Nenhuma demanda crítica identificada.</div></div>
+                    </div>
+                    <div class="insight-card"><h3><i class="fa-solid fa-ranking-star"></i> Destaque da Equipe</h3>
+                        <div class="insight-main" id="insight-top-user">—</div>
+                        <div class="insight-detail" id="insight-top-user-detail">Sem dados suficientes para o ranking.</div>
+                    </div>
+                </div>
             </div>
 
             <!-- SECTION 2: DEMANDAS & PRAZOS -->
@@ -795,7 +807,7 @@
             <div id="sec-usuarios" class="view-section">
                 <div class="card-block">
                     <div class="card-header">
-                        <h3>Equipe do CIAC</h3>
+                        <h3>Equipe do CAC</h3>
                         <button class="btn btn-accent admin-only" onclick="openUserModal()">
                             <i class="fa-solid fa-user-plus"></i> Novo Servidor
                         </button>
@@ -839,6 +851,7 @@
                 </div>
                 <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
+                    <button type="button" class="btn btn-outline" onclick="handleForgotPassword()">Esqueci a senha</button>
                     <button type="submit" class="btn btn-accent">Autenticar</button>
                 </div>
             </form>
@@ -1015,19 +1028,9 @@
         let deleteTarget = { type: null, id: null };
         let firebaseReady = false;
 
+        // Sincronização continua ativa em segundo plano; o indicador Online/Offline não é exibido.
         function setSyncStatus(status, message) {
-            const el = document.getElementById('sync-status');
-            const label = document.getElementById('lbl-sync-status');
-            if (!el || !label) return;
-            const map = {
-                online: ['admin', '<i class="fa-solid fa-cloud"></i>'],
-                offline: ['visitor', '<i class="fa-solid fa-cloud-slash"></i>'],
-                error: ['visitor', '<i class="fa-solid fa-triangle-exclamation"></i>'],
-                loading: ['visitor', '<i class="fa-solid fa-spinner fa-spin"></i>']
-            };
-            const cfg = map[status] || map.loading;
-            el.className = `role-badge ${cfg[0]}`;
-            label.innerHTML = `${cfg[1]} ${message}`;
+            window.cacSyncState = { status, message, at: Date.now() };
         }
 
         function normalizeId(id) {
@@ -1060,16 +1063,18 @@
                 selAnoFilter.innerHTML += `<option value="${a}">${a}</option>`;
                 selAnoProc.innerHTML += `<option value="${a}">${a}</option>`;
             });
-            selAnoFilter.value = "2026";
-            selAnoProc.value = "2026";
+            const currentYear = String(new Date().getFullYear());
+            selAnoFilter.value = ANOS.includes(currentYear) ? currentYear : "todos";
+            selAnoProc.value = currentYear;
 
             selMesFilter.innerHTML = '<option value="todos">Todos</option>';
             MESES.forEach(m => {
                 selMesFilter.innerHTML += `<option value="${m}">${m}</option>`;
                 selMesProc.innerHTML += `<option value="${m}">${m}</option>`;
             });
-            selMesFilter.value = "Março";
-            selMesProc.value = "Março";
+            const currentMonth = MESES[new Date().getMonth()];
+            selMesFilter.value = currentMonth;
+            selMesProc.value = currentMonth;
         }
 
         function showToast(msg, type = 'info') {
@@ -1146,6 +1151,17 @@
                 console.error(err);
                 showToast(firebaseAuthMessage(err), "danger");
             }
+        }
+
+        async function handleForgotPassword() {
+            if (!firebaseReady) return showToast("O Firebase ainda está inicializando.", "warning");
+            const identifier = document.getElementById('login-user').value.trim();
+            if (!identifier) return showToast("Informe o e-mail ou usuário admin para recuperar a senha.", "warning");
+            try {
+                const email = await resolveLoginEmail(identifier);
+                await sendPasswordResetEmail(window.firebaseAuth, email);
+                showToast("Se a conta existir, o link de redefinição foi enviado para o e-mail cadastrado.", "success");
+            } catch (err) { console.error(err); showToast(firebaseAuthMessage(err), "danger"); }
         }
 
         async function handleChangePassword(e) {
@@ -1263,7 +1279,7 @@
                 const u = users.find(usr => usr.id == p.userId) || { name: 'Desconhecido' };
                 const prazo = getPrazoStatus(p);
 
-                const matchQuery = p.protocol.toLowerCase().includes(query) || p.desc.toLowerCase().includes(query) || u.name.toLowerCase().includes(query);
+                const matchQuery = String(p.protocol || '').toLowerCase().includes(query) || String(p.desc || '').toLowerCase().includes(query) || String(u.name || '').toLowerCase().includes(query);
                 const matchS = (sVal === 'todos' || p.userId == sVal);
                 const matchO = (oVal === 'todos' || p.system === oVal);
                 const matchA = (aVal === 'todos' || p.year == aVal);
@@ -1298,7 +1314,7 @@
             let totalHoursElapsed = 0;
             data.forEach(p => {
                 const prazo = getPrazoStatus(p);
-                totalHoursElapsed += (prazo.elapsedHours || 12);
+                totalHoursElapsed += (prazo.elapsedHours || 0);
             });
             const tma = total > 0 ? Math.round(totalHoursElapsed / total) : 0;
 
@@ -1311,6 +1327,27 @@
             document.getElementById('kpi-tma').innerText = `${tma}h`;
 
             updateCharts(data);
+            updateExecutiveInsights(data);
+        }
+
+        function updateExecutiveInsights(data) {
+            const total=data.length, concluded=data.filter(p=>p.status==='Concluído').length;
+            const overdue=data.filter(p=>getPrazoStatus(p).expired).length;
+            const attention=data.filter(p=>getPrazoStatus(p).label==='Atenção ao Prazo').length;
+            const efficiency=total?Math.round(concluded/total*100):0;
+            const e=document.getElementById('insight-efficiency'), bar=document.getElementById('insight-progress'), d=document.getElementById('insight-efficiency-detail');
+            if(e)e.textContent=`${efficiency}% de resolutividade`; if(bar)bar.style.width=`${efficiency}%`;
+            if(d)d.textContent=total?`${concluded} concluída(s) de ${total} demanda(s) no recorte atual.`:'Nenhuma demanda encontrada no recorte atual.';
+            const risks=document.getElementById('insight-risks');
+            if(risks){const rows=[]; if(overdue)rows.push(`<div class="risk-item"><span>Prazo excedido</span><strong class="badge badge-danger">${overdue}</strong></div>`);
+                if(attention)rows.push(`<div class="risk-item"><span>Vencendo em até 24h</span><strong class="badge badge-warning">${attention}</strong></div>`);
+                const critical=data.filter(p=>p.priority==='Crítica'&&p.status!=='Concluído').length;
+                if(critical)rows.push(`<div class="risk-item"><span>Prioridade crítica</span><strong class="badge badge-danger">${critical}</strong></div>`);
+                risks.innerHTML=rows.length?rows.join(''):'<div class="insight-detail">Sem alertas relevantes no recorte atual.</div>';}
+            const top=document.getElementById('insight-top-user'), topD=document.getElementById('insight-top-user-detail');
+            const ranking=users.map(u=>{const rows=data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)),done=rows.filter(p=>p.status==='Concluído').length;
+                return {name:u.name,total:rows.length,done,rate:rows.length?Math.round(done/rows.length*100):0};}).filter(x=>x.total).sort((a,b)=>b.rate-a.rate||b.done-a.done||b.total-a.total);
+            if(top&&topD){if(ranking.length){top.textContent=ranking[0].name;topD.textContent=`${ranking[0].rate}% de resolutividade · ${ranking[0].done} concluída(s) em ${ranking[0].total} demanda(s).`;}else{top.textContent='—';topD.textContent='Sem dados suficientes para o ranking.';}}
         }
 
         /* GRÁFICOS INTERATIVOS */
@@ -1390,8 +1427,8 @@
                         <td><span class="badge ${getStatusBadge(p.status)}">${p.status}</span></td>
                         <td><span class="badge ${prazo.class}">${prazo.label} ${prazo.text ? `(${prazo.text})` : ''}</span></td>
                         <td class="admin-only">
-                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${p.id})"></i>
-                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${p.id})"></i>
+                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editProcess(${JSON.stringify(p.id)})"></i>
+                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('process', ${JSON.stringify(p.id)})"></i>
                         </td>
                     </tr>
                 `;
@@ -1410,8 +1447,8 @@
                         <td>${u.email}</td>
                         <td><span class="badge ${u.role === 'Coordenador' ? 'badge-sipac' : 'badge-sagitta'}">${u.role}</span></td>
                         <td class="admin-only">
-                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editUser(${u.id})"></i>
-                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('user', ${u.id})"></i>
+                            <i class="fa-solid fa-pen-to-square" style="cursor:pointer; margin-right:12px; color:var(--accent);" onclick="editUser(${JSON.stringify(u.id)})"></i>
+                            <i class="fa-solid fa-trash" style="cursor:pointer; color:var(--danger);" onclick="confirmDelete('user', ${JSON.stringify(u.id)})"></i>
                         </td>
                     </tr>
                 `;
@@ -1608,7 +1645,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `relatorio_executivo_ciac_${new Date().toISOString().slice(0,10)}.csv`;
+            a.download = `relatorio_executivo_cac_${new Date().toISOString().slice(0,10)}.csv`;
             a.click();
             showToast("Relatório CSV exportado com sucesso.", "success");
         }
@@ -1629,7 +1666,7 @@
             serverTimestamp, getDocs
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
         import {
-            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
             EmailAuthProvider, reauthenticateWithCredential, updatePassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
@@ -1659,6 +1696,7 @@
         window.collection = collection;
         window.serverTimestamp = serverTimestamp;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updatePassword = updatePassword;
@@ -1680,12 +1718,14 @@
         };
 
         async function resolveLoginEmail(identifier) {
-            if (identifier.includes('@')) return identifier.toLowerCase();
-            // Compatibilidade com o antigo usuário "admin": o e-mail oficial pode ser
-            // configurado em config/seguranca no Firestore.
-            const security = window.ciacSecurity || (await getDocs(collection(db, 'config'))).docs.find(d => d.id === 'seguranca')?.data() || {};
-            if (security.adminEmail) return security.adminEmail.toLowerCase();
-            throw new Error('Cadastre o e-mail do coordenador em config/seguranca no Firestore.');
+            const value = identifier.trim().toLowerCase();
+            if (value.includes('@')) return value;
+            const security = window.cacSecurity || (await getDocs(collection(db, 'config'))).docs.find(d => d.id === 'seguranca')?.data() || {};
+            if (value === 'admin' && security.adminEmail) return security.adminEmail.toLowerCase();
+            const snap = await getDocs(collection(db, 'servidores'));
+            const coord = snap.docs.map(d => d.data()).find(u => String(u.role || '').toLowerCase() === 'coordenador');
+            if (coord?.email) return coord.email.toLowerCase();
+            throw new Error('Não foi possível localizar o e-mail do coordenador. Use o e-mail cadastrado no Firebase Authentication.');
         }
         window.resolveLoginEmail = resolveLoginEmail;
 
@@ -1696,8 +1736,9 @@
             try {
                 const securitySnap = await getDocs(collection(db, 'config'));
                 const security = securitySnap.docs.find(d => d.id === 'seguranca')?.data() || {};
-                isCoordenador = !!user && security.adminUid === user.uid;
-                window.ciacSecurity = security;
+                const coordByEmail = !!user && security.adminEmail && String(security.adminEmail).toLowerCase() === String(user.email || '').toLowerCase();
+                isCoordenador = !!user && (security.adminUid === user.uid || coordByEmail);
+                window.cacSecurity = security;
             } catch (err) {
                 console.error('Falha ao carregar configuração de segurança:', err);
             }
@@ -1720,7 +1761,7 @@
                 collection(db, 'processos'),
                 snapshot => {
                     processes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setSyncStatus('online', isCoordenador ? 'Sincronizado' : 'Online · leitura');
+                    setSyncStatus('synced', 'Dados atualizados');
                     populateDropdowns();
                     applyFilters();
                 },
