@@ -6,6 +6,8 @@
     <title>Painel Executivo de Gestão Integrada - CAC</title>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS: leitura de CSV/XLS/XLSX no navegador -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
@@ -583,6 +585,7 @@
                 <li><a href="#" onclick="navigate('processos', event)"><i class="fa-solid fa-list-check"></i> Demandas & Prazos</a></li>
                 <li><a href="#" onclick="navigate('relatorios', event)"><i class="fa-solid fa-file-invoice"></i> Relatório Gerencial</a></li>
                 <li class="admin-only"><a href="#" onclick="navigate('usuarios', event)"><i class="fa-solid fa-users"></i> Gestão de Servidores</a></li>
+                <li class="admin-only"><a href="#" onclick="navigate('base-dados', event)"><i class="fa-solid fa-database"></i> Base de Dados</a></li>
                 <li class="admin-only"><a href="#" onclick="navigate('auditoria', event)"><i class="fa-solid fa-clock-rotate-left"></i> Auditoria</a></li>
             </ul>
         </div>
@@ -635,6 +638,10 @@
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input type="text" id="search-global" placeholder="Buscar protocolo, demanda, servidor..." onkeyup="applyFilters()">
                     </div>
+                    <label style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:var(--text-muted);white-space:nowrap;">
+                        <input type="checkbox" id="search-only-mode" checked onchange="applyFilters()">
+                        Exigir busca para exibir dados
+                    </label>
 
                     <div class="btn-group">
                         <button class="btn btn-outline" onclick="resetFilters()">
@@ -752,10 +759,6 @@
                     <div class="insight-card"><h3><i class="fa-solid fa-triangle-exclamation"></i> Prioridades</h3>
                         <div class="risk-list" id="insight-risks"><div class="insight-detail">Nenhuma demanda crítica identificada.</div></div>
                     </div>
-                    <div class="insight-card"><h3><i class="fa-solid fa-ranking-star"></i> Destaque da Equipe</h3>
-                        <div class="insight-main" id="insight-top-user">—</div>
-                        <div class="insight-detail" id="insight-top-user-detail">Sem dados suficientes para o ranking.</div>
-                    </div>
                     <div class="insight-card"><h3><i class="fa-solid fa-scale-balanced"></i> Equilíbrio de Carga</h3>
                         <div class="insight-main" id="insight-workload">—</div>
                         <div class="insight-detail" id="insight-workload-detail">Analisando distribuição das demandas.</div>
@@ -768,9 +771,14 @@
                 <div class="card-block">
                     <div class="card-header">
                         <h3>Gestão de Demandas, Atribuição e Prazos Regimentais</h3>
-                        <button class="btn btn-accent admin-only" onclick="openProcessModal()">
-                            <i class="fa-solid fa-plus"></i> Registrar Nova Demanda
-                        </button>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn btn-outline admin-only" onclick="openDataCleanupModal()">
+                                <i class="fa-solid fa-broom"></i> Excluir dados por período
+                            </button>
+                            <button class="btn btn-accent admin-only" onclick="openProcessModal()">
+                                <i class="fa-solid fa-plus"></i> Registrar Nova Demanda
+                            </button>
+                        </div>
                     </div>
                     <div id="overdue-alert-panel" class="insight-card" style="margin-bottom:16px;display:none;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
@@ -862,7 +870,31 @@
                 </div>
             </div>
 
-            <!-- SECTION 5: AUDITORIA -->
+            <!-- SECTION 5: BASE DE DADOS — SOMENTE COORDENADORES -->
+            <div id="sec-base-dados" class="view-section admin-only">
+                <div class="card-block">
+                    <div class="card-header">
+                        <div>
+                            <h3>Base de Dados</h3>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Armazene arquivos CSV/Excel na nuvem e use-os para carregar demandas automaticamente.</div>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn btn-outline admin-only" onclick="openBaseDatabaseModal()"><i class="fa-solid fa-plus"></i> Nova base</button>
+                            <button class="btn btn-accent admin-only" onclick="document.getElementById('import-data-file').click()"><i class="fa-solid fa-file-import"></i> Importar dados</button>
+                            <button class="btn btn-outline admin-only" onclick="openDataCleanupModal()"><i class="fa-solid fa-broom"></i> Limpar demandas por período</button>
+                            <input id="import-data-file" type="file" hidden accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="importDataFile(event)">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead><tr><th>Nome da Base</th><th>Arquivo</th><th>Tamanho</th><th>Atualizada em</th><th>Ações</th></tr></thead>
+                            <tbody id="tbl-base-dados"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 6: AUDITORIA -->
             <div id="sec-auditoria" class="view-section">
                 <div class="card-block">
                     <div class="card-header">
@@ -1087,6 +1119,61 @@
         </div>
     </div>
 
+    <!-- BASE DE DADOS MODAL -->
+    <div class="modal-backdrop" id="modal-base-dados">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="lbl-base-modal">Nova Base de Dados</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-base-dados')" style="cursor:pointer"></i>
+            </div>
+            <form onsubmit="saveBaseDatabase(event)">
+                <input type="hidden" id="base-id">
+                <div class="form-group">
+                    <label>Nome da Base</label>
+                    <input type="text" id="base-name" required maxlength="120" placeholder="Ex.: Carga SIPAC Setembro 2026">
+                </div>
+                <div class="form-group">
+                    <label>Arquivo CSV / Excel</label>
+                    <input type="file" id="base-file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;">Até 20 MB. Ao editar, o arquivo só é substituído se um novo arquivo for selecionado.</div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-base-dados')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Salvar Base</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- LIMPEZA DE DEMANDAS POR PERÍODO -->
+    <div class="modal-backdrop" id="modal-data-cleanup">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Excluir dados de demandas</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-data-cleanup')" style="cursor:pointer"></i>
+            </div>
+            <div style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">
+                A exclusão é permanente no Firestore. Você pode remover todo o histórico de demandas ou somente um ano/mês. Servidores e auditoria não serão apagados.
+            </div>
+            <div class="form-group">
+                <label>Escopo</label>
+                <select id="cleanup-scope" onchange="toggleCleanupPeriod()">
+                    <option value="periodo">Período específico</option>
+                    <option value="ano">Ano inteiro</option>
+                    <option value="todos">Todo o período</option>
+                </select>
+            </div>
+            <div id="cleanup-period-fields" style="display:flex;gap:8px;">
+                <div class="form-group" style="flex:1"><label>Ano</label><select id="cleanup-year"></select></div>
+                <div class="form-group" style="flex:1"><label>Mês</label><select id="cleanup-month"></select></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modal-data-cleanup')">Cancelar</button>
+                <button type="button" class="btn btn-accent" style="background-color:var(--danger);" onclick="executeDataCleanup()"><i class="fa-solid fa-trash"></i> Excluir permanentemente</button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL CONFIRMAÇÃO -->
     <div class="modal-backdrop" id="modal-confirm">
         <div class="modal">
@@ -1124,6 +1211,9 @@
         let auditLogs = [];
         let unsubConfig = null;
         let unsubAudit = null;
+        let unsubBaseDados = null;
+        let baseDados = [];
+        let searchOnlyMode = true;
 
         /*
          * CAC SYNC CONTRACT — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
@@ -1138,13 +1228,15 @@
          * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
          * 8) NÃO iniciar listeners onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
          * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
+         * 10) Base de Dados usa Firestore para metadados e Firebase Storage para os arquivos.
+         * 11) Importação CSV/XLS/XLSX cria demandas em lotes e cria automaticamente servidores ausentes.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
             enabled: true,
             realtime: true,
             sourceOfTruth: 'firestore',
             persistence: 'firestore-only',
-            collections: ['processos', 'servidores', 'config', 'auditoria']
+            collections: ['processos', 'servidores', 'config', 'auditoria', 'baseDados']
         });
         const CAC_SYNC_CONTRACT = window.CAC_SYNC_CONTRACT;
 
@@ -1163,6 +1255,8 @@
             updateRoleUI();
             populateDropdowns();
             initCharts();
+            const searchModeEl = document.getElementById('search-only-mode');
+            if (searchModeEl) { searchOnlyMode = searchModeEl.checked; }
             applyFilters();
             setSyncStatus('loading', 'Conectando...');
             document.addEventListener('keydown', (e) => {
@@ -1436,6 +1530,8 @@
             const btnLogout = document.getElementById('btn-logout-trigger');
             const btnChangePass = document.getElementById('btn-change-pass');
             syncCoordinatorState();
+            if (isCoordenador && currentUser) subscribeBaseDatabase();
+            else if (unsubBaseDados) { unsubBaseDados(); unsubBaseDados = null; baseDados = []; renderBaseDatabaseTable(); }
             const profile = getCurrentProfile();
             const servidorLogado = isServidor();
 
@@ -1481,7 +1577,7 @@
                 'visao-geral': 'Painel Geral de Desempenho',
                 'processos': 'Gestão de Demandas e Prazos',
                 'relatorios': 'Relatório Gerencial de Produtividade',
-                'usuarios': 'Gestão de Servidores', 'auditoria': 'Auditoria do Sistema'
+                'usuarios': 'Gestão de Servidores', 'base-dados': 'Base de Dados', 'auditoria': 'Auditoria do Sistema'
             };
             document.getElementById('page-title').innerText = titles[viewId];
             if (viewId === 'relatorios') renderReportSummary();
@@ -1526,7 +1622,9 @@
 
         /* FILTROS E MÉTRICAS */
         function applyFilters() {
-            const query = document.getElementById('search-global').value.toLowerCase();
+            const query = document.getElementById('search-global').value.trim().toLowerCase();
+            const searchModeEl = document.getElementById('search-only-mode');
+            searchOnlyMode = !!searchModeEl?.checked;
             const sVal = document.getElementById('filter-servidor').value;
             const oVal = document.getElementById('filter-origem').value;
             const aVal = document.getElementById('filter-ano').value;
@@ -1538,6 +1636,15 @@
             // Painel, demandas e relatório usam o recorte permitido ao usuário.
             const visibleProcesses = getCurrentVisibleProcesses();
             const visibleUsers = getCurrentVisibleUsers();
+
+            if (searchOnlyMode && !query) {
+                filteredProcesses = [];
+                updateMetrics(filteredProcesses);
+                renderProcessTable(filteredProcesses);
+                renderUserTable();
+                renderReportSummary(filteredProcesses);
+                return;
+            }
 
             const filtered = visibleProcesses.filter(p => {
                 const u = visibleUsers.find(usr => normalizeId(usr.id) === normalizeId(p.userId))
@@ -1610,10 +1717,7 @@
                 const critical=data.filter(p=>p.priority==='Crítica'&&p.status!=='Concluído').length;
                 if(critical)rows.push(`<div class="risk-item"><span>Prioridade crítica</span><strong class="badge badge-danger">${critical}</strong></div>`);
                 risks.innerHTML=rows.length?rows.join(''):'<div class="insight-detail">Sem alertas relevantes no recorte atual.</div>';}
-            const top=document.getElementById('insight-top-user'), topD=document.getElementById('insight-top-user-detail');
-            const ranking=getCurrentVisibleUsers().map(u=>{const rows=data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)),done=rows.filter(p=>p.status==='Concluído').length;
-                return {name:u.name,total:rows.length,done,rate:rows.length?Math.round(done/rows.length*100):0};}).filter(x=>x.total).sort((a,b)=>b.rate-a.rate||b.done-a.done||b.total-a.total);
-            if(top&&topD){if(ranking.length){top.textContent=ranking[0].name;topD.textContent=`${ranking[0].rate}% de resolutividade · ${ranking[0].done} concluída(s) em ${ranking[0].total} demanda(s).`;}else{top.textContent='—';topD.textContent='Sem dados suficientes para o ranking.';}}
+            // O ranking individual foi removido do Painel Geral por solicitação.
             const workloadEl=document.getElementById('insight-workload'), workloadD=document.getElementById('insight-workload-detail');
             const loads=getCurrentVisibleUsers().map(u=>({name:u.name,total:data.filter(p=>normalizeId(p.userId)===normalizeId(u.id)&&p.status!=='Concluído').length})).filter(x=>x.total>0);
             if(workloadEl&&workloadD){
@@ -1719,7 +1823,7 @@
                 `;
             }).join('');
 
-            tbody.innerHTML = rows || '<tr><td colspan="9" class="empty-state">Nenhuma demanda encontrada.</td></tr>';
+            tbody.innerHTML = rows || `<tr><td colspan="9" class="empty-state">${searchOnlyMode && !document.getElementById('search-global').value.trim() ? 'Digite um termo na busca para exibir as demandas.' : 'Nenhuma demanda encontrada.'}</td></tr>`;
         }
 
         function escapeHtml(value) {
@@ -1840,6 +1944,337 @@
                     </tr>
                 `;
             });
+        }
+
+        function subscribeBaseDatabase() {
+            if (!currentUser || !isCoordenador || unsubBaseDados) return;
+            unsubBaseDados = onSnapshot(
+                query(collection(window.db, 'baseDados'), orderBy('createdAt', 'desc')),
+                snapshot => {
+                    baseDados = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    renderBaseDatabaseTable();
+                },
+                err => {
+                    console.warn('Base de Dados em tempo real indisponível:', err);
+                    showToast('Não foi possível carregar a Base de Dados. Verifique as regras do Firestore.', 'danger');
+                }
+            );
+        }
+
+        function formatFileSize(bytes) {
+            const n = Number(bytes || 0);
+            if (!n) return '—';
+            if (n < 1024) return `${n} B`;
+            if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+            return `${(n / 1024 / 1024).toFixed(2)} MB`;
+        }
+
+        function openBaseDatabaseModal(id = '') {
+            if (!requireCoordinator('gerenciar bases de dados')) return;
+            document.getElementById('base-id').value = '';
+            document.getElementById('base-name').value = '';
+            document.getElementById('base-file').value = '';
+            document.getElementById('lbl-base-modal').innerText = 'Nova Base de Dados';
+            if (id) {
+                const base = baseDados.find(b => normalizeId(b.id) === normalizeId(id));
+                if (!base) return showToast('Base de dados não encontrada.', 'danger');
+                document.getElementById('base-id').value = base.id;
+                document.getElementById('base-name').value = base.name || '';
+                document.getElementById('lbl-base-modal').innerText = 'Alterar Base de Dados';
+            }
+            document.getElementById('modal-base-dados').style.display = 'flex';
+        }
+
+        async function saveBaseDatabase(e) {
+            e.preventDefault();
+            if (!requireCoordinator('gerenciar bases de dados')) return;
+            const id = document.getElementById('base-id').value.trim();
+            const name = document.getElementById('base-name').value.trim();
+            const file = document.getElementById('base-file').files[0] || null;
+            if (!name) return showToast('Informe o nome da base.', 'warning');
+            if (file && file.size > 20 * 1024 * 1024) return showToast('O arquivo excede o limite de 20 MB.', 'warning');
+            if (file && !/\.(csv|xls|xlsx)$/i.test(file.name)) return showToast('Use um arquivo CSV, XLS ou XLSX.', 'warning');
+            try {
+                const existing = id ? baseDados.find(b => normalizeId(b.id) === normalizeId(id)) : null;
+                let baseId = id;
+                if (!baseId) baseId = doc(collection(window.db, 'baseDados')).id;
+                let storagePath = existing?.storagePath || `bases_dados/${baseId}/${sanitizeStorageName(file?.name || existing?.fileName || name)}`;
+                if (file) {
+                    storagePath = `bases_dados/${baseId}/${sanitizeStorageName(file.name)}`;
+                    const storage = window.cacStorage;
+                    if (!storage) throw new Error('Firebase Storage não está disponível.');
+                    await storage.uploadBytes(storage.storageRef(storage.storage, storagePath), file, { contentType: file.type || 'application/octet-stream', customMetadata: { baseId, originalName: file.name } });
+                }
+                const payload = {
+                    name,
+                    fileName: file?.name || existing?.fileName || '',
+                    size: file?.size || existing?.size || 0,
+                    contentType: file?.type || existing?.contentType || 'application/octet-stream',
+                    storagePath,
+                    updatedAt: serverTimestamp(),
+                    updatedBy: currentUser?.uid || null
+                };
+                if (existing) await updateDoc(doc(window.db, 'baseDados', baseId), payload);
+                else await setDoc(doc(window.db, 'baseDados', baseId), { ...payload, createdAt: serverTimestamp(), createdBy: currentUser?.uid || null });
+                if (existing?.storagePath && file && existing.storagePath !== storagePath && window.cacStorage) {
+                    try { await window.cacStorage.deleteObject(window.cacStorage.storageRef(window.cacStorage.storage, existing.storagePath)); } catch (oldStorageErr) {
+                        if (oldStorageErr?.code !== 'storage/object-not-found') console.warn('Arquivo anterior não removido:', oldStorageErr);
+                    }
+                }
+                await writeAudit(existing ? 'ATUALIZAÇÃO' : 'CRIAÇÃO', 'Base de Dados', { id: baseId, nome: name, arquivo: payload.fileName });
+                closeModal('modal-base-dados');
+                showToast(existing ? 'Base de dados atualizada.' : 'Base de dados armazenada na nuvem.', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Não foi possível salvar a base: ' + err.message, 'danger');
+            }
+        }
+
+        function sanitizeStorageName(value) {
+            return String(value || 'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 180) || 'arquivo';
+        }
+
+        function renderBaseDatabaseTable() {
+            const tbody = document.getElementById('tbl-base-dados');
+            if (!tbody) return;
+            if (!isCoordenador) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Acesso restrito à Coordenadoria.</td></tr>'; return; }
+            if (!baseDados.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nenhuma base de dados cadastrada.</td></tr>'; return; }
+            tbody.innerHTML = baseDados.map(b => {
+                const dt = b.updatedAt?.toDate ? b.updatedAt.toDate() : (b.updatedAt ? new Date(b.updatedAt) : null);
+                const id = normalizeId(b.id);
+                return `<tr><td><strong>${escapeHtml(b.name || 'Sem nome')}</strong></td><td>${escapeHtml(b.fileName || '—')}</td><td>${formatFileSize(b.size)}</td><td>${dt ? escapeHtml(dt.toLocaleString('pt-BR')) : 'Processando…'}</td><td class="process-actions"><button type="button" class="icon-action-btn" data-base-action="download" data-id="${escapeHtml(id)}" title="Baixar"><i class="fa-solid fa-download"></i></button><button type="button" class="icon-action-btn edit-process-btn" data-base-action="edit" data-id="${escapeHtml(id)}" title="Alterar"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" class="icon-action-btn delete-process-btn" data-base-action="delete" data-id="${escapeHtml(id)}" title="Excluir"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+            }).join('');
+        }
+
+        document.addEventListener('click', function(event) {
+            const button = event.target.closest('[data-base-action]');
+            if (!button) return;
+            event.preventDefault();
+            const id = button.getAttribute('data-id') || '';
+            const action = button.getAttribute('data-base-action');
+            if (!id) return;
+            if (action === 'edit') openBaseDatabaseModal(id);
+            if (action === 'delete') confirmDelete('base', id);
+            if (action === 'download') downloadBaseDatabase(id);
+        });
+
+        async function downloadBaseDatabase(id) {
+            if (!requireCoordinator('baixar bases de dados')) return;
+            const base = baseDados.find(b => normalizeId(b.id) === normalizeId(id));
+            if (!base?.storagePath) return showToast('Arquivo da base não encontrado.', 'danger');
+            try {
+                const storage = window.cacStorage;
+                const url = await storage.getDownloadURL(storage.storageRef(storage.storage, base.storagePath));
+                const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.click();
+            } catch (err) { console.error(err); showToast('Não foi possível obter o arquivo: ' + err.message, 'danger'); }
+        }
+
+        function initCleanupSelectors() {
+            const y = document.getElementById('cleanup-year');
+            const m = document.getElementById('cleanup-month');
+            if (!y || !m) return;
+            y.innerHTML = ANOS.map(a => `<option value="${a}">${a}</option>`).join('');
+            m.innerHTML = MESES.map(x => `<option value="${x}">${x}</option>`).join('');
+            y.value = String(new Date().getFullYear());
+            m.value = MESES[new Date().getMonth()];
+        }
+
+        function openDataCleanupModal() {
+            if (!requireCoordinator('excluir dados por período')) return;
+            initCleanupSelectors();
+            document.getElementById('cleanup-scope').value = 'periodo';
+            toggleCleanupPeriod();
+            document.getElementById('modal-data-cleanup').style.display = 'flex';
+        }
+
+        function toggleCleanupPeriod() {
+            const scope = document.getElementById('cleanup-scope').value;
+            document.getElementById('cleanup-period-fields').style.display = scope === 'todos' ? 'none' : 'flex';
+            if (scope === 'ano') document.getElementById('cleanup-month').value = 'todos';
+        }
+
+        async function executeDataCleanup() {
+            if (!requireCoordinator('excluir dados por período')) return;
+            const scope = document.getElementById('cleanup-scope').value;
+            const year = document.getElementById('cleanup-year').value;
+            const month = document.getElementById('cleanup-month').value;
+            let target = processes.slice();
+            if (scope === 'ano') target = target.filter(p => String(p.year) === String(year));
+            if (scope === 'periodo') target = target.filter(p => String(p.year) === String(year) && String(p.month) === String(month));
+            if (!target.length) return showToast('Nenhuma demanda encontrada para o escopo escolhido.', 'info');
+            const label = scope === 'todos' ? 'todo o histórico' : scope === 'ano' ? `o ano ${year}` : `${month}/${year}`;
+            if (!confirm(`Atenção: ${target.length} demanda(s) serão excluídas permanentemente de ${label}. Continuar?`)) return;
+            try {
+                let deleted = 0;
+                for (let i = 0; i < target.length; i += 400) {
+                    const batch = window.cacWriteBatch(window.db);
+                    target.slice(i, i + 400).forEach(p => batch.delete(doc(window.db, 'processos', p.id)));
+                    await batch.commit();
+                    deleted += Math.min(400, target.length - i);
+                }
+                await writeAudit('LIMPEZA', 'Demandas', { escopo: label, quantidade: deleted });
+                closeModal('modal-data-cleanup');
+                showToast(`${deleted} demanda(s) excluída(s) permanentemente.`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Falha durante a limpeza: ' + err.message, 'danger');
+            }
+        }
+
+        function normalizeImportedKey(value) {
+            return String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        }
+
+        function getImportedCell(row, aliases) {
+            const map = Object.keys(row || {}).reduce((acc, k) => { acc[normalizeImportedKey(k)] = row[k]; return acc; }, {});
+            for (const alias of aliases) {
+                const v = map[normalizeImportedKey(alias)];
+                if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+            }
+            return '';
+        }
+
+        function excelDateToLocal(value) {
+            if (value instanceof Date && !isNaN(value)) return value;
+            if (typeof value === 'number' && window.XLSX?.SSF) {
+                const d = window.XLSX.SSF.parse_date_code(value);
+                if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, Math.floor(d.S || 0));
+            }
+            const raw = String(value ?? '').trim();
+            if (!raw) return null;
+            let m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ T](\d{1,2}):?(\d{2})?)?$/);
+            if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0));
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? null : d;
+        }
+
+        function toDatetimeLocal(d) {
+            if (!d) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function importedPriority(value) {
+            const raw = String(value || '').trim().toLowerCase();
+            if (raw.includes('crit')) return 'Crítica';
+            if (raw.includes('alta')) return 'Alta';
+            if (raw.includes('baixa')) return 'Baixa';
+            return 'Média';
+        }
+
+        function importedStatus(value) {
+            const raw = String(value || '').trim().toLowerCase();
+            if (raw.includes('concl')) return 'Concluído';
+            if (raw.includes('andamento') || raw.includes('andando')) return 'Em Andamento';
+            return 'Pendente';
+        }
+
+        function importedWeek(date, explicit) {
+            const n = Number(explicit);
+            if ([1,2,3,4].includes(n)) return String(n);
+            if (!date) return '1';
+            return String(Math.min(4, Math.max(1, Math.ceil(date.getDate() / 7))));
+        }
+
+        function importedMonth(value, date) {
+            const raw = String(value || '').trim();
+            if (MESES.includes(raw)) return raw;
+            const n = Number(raw);
+            if (n >= 1 && n <= 12) return MESES[n - 1];
+            return date ? MESES[date.getMonth()] : MESES[new Date().getMonth()];
+        }
+
+        function importedSystem(value) {
+            const raw = String(value || '').trim().toUpperCase();
+            return raw.includes('SAGITTA') ? 'SAGITTA' : 'SIPAC';
+        }
+
+        function serverKey(name) {
+            return String(name || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        function stableImportId(name) {
+            let hash = 0; const key = serverKey(name);
+            for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i) | 0;
+            return `import_${Math.abs(hash)}`;
+        }
+
+        async function importDataFile(event) {
+            if (!requireCoordinator('importar dados')) { event.target.value = ''; return; }
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            if (file.size > 20 * 1024 * 1024) return showToast('O arquivo excede o limite de 20 MB.', 'warning');
+            if (!window.XLSX) return showToast('Leitor de CSV/Excel ainda não carregou. Recarregue a página.', 'danger');
+            try {
+                const buffer = await file.arrayBuffer();
+                const wb = window.XLSX.read(buffer, { type: 'array', cellDates: true });
+                const sheetName = wb.SheetNames[0];
+                if (!sheetName) throw new Error('A planilha não possui uma aba válida.');
+                const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: true });
+                if (!rows.length) throw new Error('O arquivo não possui linhas de dados.');
+                const sample = rows[0];
+                const required = [
+                    ['Servidor'], ['Origem'], ['Protocolo'], ['Descricao', 'Descrição'], ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao'], ['SLA_Prioridade', 'SLA Prioridade'], ['Ano'], ['Mes', 'Mês'], ['Semana'], ['Status'], ['Situacao_SLA', 'Situação SLA']
+                ];
+                const headers = Object.keys(sample).map(normalizeImportedKey);
+                const missing = required.slice(0, 4).filter(group => !group.some(x => headers.includes(normalizeImportedKey(x))));
+                if (missing.length) throw new Error('Colunas obrigatórias não encontradas. Necessárias: Servidor, Origem, Protocolo e Descricao.');
+                if (!confirm(`Foram encontradas ${rows.length} linha(s). As demandas serão importadas e os servidores ausentes serão criados automaticamente. Continuar?`)) return;
+
+                const serverMap = new Map(users.map(u => [serverKey(u.name), u]));
+                const newServers = [];
+                const processPayloads = [];
+                let skipped = 0;
+                for (const row of rows) {
+                    const serverName = String(getImportedCell(row, ['Servidor', 'Servidor Responsavel', 'Servidor Responsável']) || '').trim();
+                    const protocol = String(getImportedCell(row, ['Protocolo', 'Protocolo Ticket', 'Ticket']) || '').trim();
+                    if (!serverName || !protocol) { skipped++; continue; }
+                    let user = serverMap.get(serverKey(serverName));
+                    if (!user) {
+                        const sid = stableImportId(serverName);
+                        user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
+                        serverMap.set(serverKey(serverName), user);
+                        newServers.push(user);
+                    }
+                    const assigned = excelDateToLocal(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao']));
+                    const system = importedSystem(getImportedCell(row, ['Origem']));
+                    const priority = importedPriority(getImportedCell(row, ['SLA_Prioridade', 'SLA Prioridade', 'Prioridade']));
+                    const status = importedStatus(getImportedCell(row, ['Status']));
+                    const yearRaw = getImportedCell(row, ['Ano']);
+                    const year = String(yearRaw || (assigned ? assigned.getFullYear() : new Date().getFullYear()));
+                    const month = importedMonth(getImportedCell(row, ['Mes', 'Mês']), assigned);
+                    const week = importedWeek(assigned, getImportedCell(row, ['Semana']));
+                    const payload = {
+                        userId: normalizeId(user.id),
+                        authUid: normalizeId(user.authUid || ''),
+                        system,
+                        protocol,
+                        desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
+                        assignedAt: toDatetimeLocal(assigned),
+                        year, month, week, priority, status,
+                        importedFrom: file.name,
+                        importedAt: serverTimestamp(),
+                        createdAt: serverTimestamp(), createdBy: currentUser?.uid || null,
+                        updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null
+                    };
+                    processPayloads.push(payload);
+                }
+                for (const u of newServers) {
+                    const ref = doc(window.db, 'servidores', u.id);
+                    await setDoc(ref, { name: u.name, email: '', role: 'Servidor', importedAuto: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || null }, { merge: true });
+                }
+                for (let i = 0; i < processPayloads.length; i += 400) {
+                    const batch = window.cacWriteBatch(window.db);
+                    processPayloads.slice(i, i + 400).forEach(payload => batch.set(doc(collection(window.db, 'processos')), payload));
+                    await batch.commit();
+                }
+                await writeAudit('IMPORTAÇÃO', 'Demandas', { arquivo: file.name, linhas: rows.length, importadas: processPayloads.length, ignoradas: skipped, servidoresCriados: newServers.length });
+                showToast(`${processPayloads.length} demanda(s) importada(s); ${newServers.length} servidor(es) criado(s) automaticamente.`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Falha na importação: ' + err.message, 'danger');
+            }
         }
 
         async function writeAudit(action, area, details = {}) {
@@ -2029,7 +2464,10 @@
             }
             deleteTarget = { type, id: normalizeId(id) };
             const msgLbl = document.getElementById('lbl-confirm-msg');
-            if (type === 'user') {
+            if (type === 'base') {
+                const base = baseDados.find(b => normalizeId(b.id) === normalizeId(id));
+                msgLbl.innerText = base ? `Confirma a exclusão permanente da base “${base.name}” e do arquivo armazenado na nuvem?` : 'Confirma a exclusão permanente desta base de dados?';
+            } else if (type === 'user') {
                 const userProcs = processes.filter(p => normalizeId(p.userId) === normalizeId(id)).length;
                 msgLbl.innerText = userProcs > 0
                     ? `Este servidor possui ${userProcs} demanda(s) vinculada(s). Ao excluir, elas ficarão como "Não Atribuído". Deseja prosseguir?`
@@ -2060,6 +2498,17 @@
                     await deleteDoc(doc(window.db, 'servidores', deleteTarget.id));
                     await writeAudit('EXCLUSÃO', 'Servidor', { id: deleteTarget.id, demandasDesvinculadas: linked.length });
                     showToast("Servidor removido e vínculos atualizados.", "success");
+                } else if (deleteTarget.type === 'base') {
+                    const base = baseDados.find(b => normalizeId(b.id) === normalizeId(deleteTarget.id));
+                    if (!base) throw new Error('Base de dados não encontrada.');
+                    if (base.storagePath && window.cacStorage) {
+                        try { await window.cacStorage.deleteObject(window.cacStorage.storageRef(window.cacStorage.storage, base.storagePath)); } catch (storageErr) {
+                            if (storageErr?.code !== 'storage/object-not-found') throw storageErr;
+                        }
+                    }
+                    await deleteDoc(doc(window.db, 'baseDados', deleteTarget.id));
+                    await writeAudit('EXCLUSÃO', 'Base de Dados', { id: deleteTarget.id, nome: base.name });
+                    showToast("Base de dados removida da nuvem.", "success");
                 }
                 closeModal('modal-confirm');
             } catch (err) {
@@ -2184,12 +2633,13 @@
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
         import {
             getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc,
-            serverTimestamp, getDocs, query, orderBy, limit
+            serverTimestamp, getDocs, query, orderBy, limit, writeBatch
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
         import {
             getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
             EmailAuthProvider, reauthenticateWithCredential, updatePassword, createUserWithEmailAndPassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyA4S6EbV3Z70a7tyk6F_VDgYE_k7ZuFBoQ",
@@ -2205,6 +2655,7 @@
         try { getAnalytics(app); } catch (_) {}
 
         const db = getFirestore(app);
+        const storage = getStorage(app);
         const auth = getAuth(app);
         const accessApp = initializeApp(firebaseConfig, 'cac-access-creator');
         const accessAuth = getAuth(accessApp);
@@ -2218,6 +2669,8 @@
         window.doc = doc;
         window.collection = collection;
         window.serverTimestamp = serverTimestamp;
+        window.cacWriteBatch = writeBatch;
+        window.cacStorage = { storage, storageRef, uploadBytes, getDownloadURL, deleteObject };
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.EmailAuthProvider = EmailAuthProvider;
@@ -2343,6 +2796,9 @@
             if (unsubServidores) unsubServidores();
             if (unsubConfig) unsubConfig();
             if (unsubAudit) unsubAudit();
+            if (unsubBaseDados) { unsubBaseDados(); unsubBaseDados = null; }
+            baseDados = [];
+            renderBaseDatabaseTable();
 
             setSyncStatus('loading', 'Sincronizando...');
 
@@ -2395,6 +2851,9 @@
                     },
                     err => console.warn('Auditoria em tempo real indisponível:', err)
                 );
+
+                // Base de Dados: listener é ativado somente quando o usuário é Coordenador.
+                if (isCoordenador) subscribeBaseDatabase();
             } else {
                 auditLogs = [];
                 renderAuditTable();
