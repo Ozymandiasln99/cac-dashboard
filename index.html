@@ -638,11 +638,6 @@
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input type="text" id="search-global" placeholder="Buscar protocolo, demanda, servidor..." onkeyup="applyFilters()">
                     </div>
-                    <label style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:var(--text-muted);white-space:nowrap;">
-                        <input type="checkbox" id="search-only-mode" checked onchange="applyFilters()">
-                        Exigir busca para exibir dados
-                    </label>
-
                     <div class="btn-group">
                         <button class="btn btn-outline" onclick="resetFilters()">
                             <i class="fa-solid fa-rotate-left"></i> Limpar Filtros
@@ -659,23 +654,23 @@
                 <div class="controls-row" style="border-top: 1px solid var(--border); padding-top: 12px;">
                     <div class="filter-group">
                         <label>Servidor:</label>
-                        <select id="filter-servidor" onchange="applyFilters()"><option value="todos">Todos</option></select>
+                        <select id="filter-servidor"><option value="todos">Todos</option></select>
 
                         <label>Origem:</label>
-                        <select id="filter-origem" onchange="applyFilters()">
+                        <select id="filter-origem">
                             <option value="todos">Todas</option>
                             <option value="SIPAC">SIPAC</option>
                             <option value="SAGITTA">SAGITTA</option>
                         </select>
 
                         <label>Ano:</label>
-                        <select id="filter-ano" onchange="applyFilters()"></select>
+                        <select id="filter-ano"></select>
 
                         <label>Mês:</label>
-                        <select id="filter-mes" onchange="applyFilters()"></select>
+                        <select id="filter-mes"></select>
 
                         <label>Semana:</label>
-                        <select id="filter-semana" onchange="applyFilters()">
+                        <select id="filter-semana">
                             <option value="todos">Todas</option>
                             <option value="1">1ª Semana</option>
                             <option value="2">2ª Semana</option>
@@ -684,7 +679,7 @@
                         </select>
 
                         <label>Status:</label>
-                        <select id="filter-status" onchange="applyFilters()">
+                        <select id="filter-status">
                             <option value="todos">Todos</option>
                             <option value="Concluído">Concluído</option>
                             <option value="Em Andamento">Em Andamento</option>
@@ -692,12 +687,16 @@
                         </select>
 
                         <label>Prazo Regimental:</label>
-                        <select id="filter-prazo" onchange="applyFilters()">
+                        <select id="filter-prazo">
                             <option value="todos">Todos</option>
                             <option value="OK">No Prazo</option>
                             <option value="Atenção">Atenção (&lt;24h)</option>
                             <option value="Excedido">Excedido</option>
                         </select>
+
+                        <button type="button" class="btn btn-outline" id="btn-buscar-filtros" onclick="applyFilters(true)" title="Aplicar servidor, origem, período, status e prazo regimental">
+                            <i class="fa-solid fa-magnifying-glass"></i> Buscar
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1211,7 +1210,40 @@
         let unsubAudit = null;
         let unsubBaseDados = null;
         let baseDados = [];
-        let searchOnlyMode = true;
+
+        /*
+         * PROTEÇÃO PERMANENTE DO CAC — NÃO ALTERAR FORA DE SOLICITAÇÃO EXPRESSA.
+         * Este bloco define os componentes críticos que devem permanecer intactos:
+         * Firebase/Auth, Firestore, sincronização realtime, permissões, estrutura das
+         * coleções e regras de origem dos dados. As alterações solicitadas devem ser
+         * cirúrgicas e não podem introduzir localStorage/sessionStorage/IndexedDB ou
+         * Firebase Storage.
+         */
+        const CAC_PROTECTION = Object.freeze({
+            projectId: 'cac-painel',
+            authDomain: 'cac-painel.firebaseapp.com',
+            adminEmail: 'l.n.1999oficial@gmail.com',
+            sourceOfTruth: 'firestore',
+            realtimeRequired: true,
+            storageRequired: false,
+            localOperationalStorage: false,
+            protectedCollections: Object.freeze(['processos', 'servidores', 'config', 'auditoria', 'baseDados'])
+        });
+
+        function validateCACProtection() {
+            const cfg = window.CAC_FIREBASE_CONFIG || null;
+            const checks = [
+                !cfg || cfg.projectId === CAC_PROTECTION.projectId,
+                !cfg || cfg.authDomain === CAC_PROTECTION.authDomain,
+                String(CAC_ADMIN_EMAIL).toLowerCase() === CAC_PROTECTION.adminEmail,
+                typeof window.db !== 'undefined',
+                typeof window.firebaseAuth !== 'undefined',
+                typeof window.onSnapshot === 'function'
+            ];
+            if (checks.every(Boolean)) return true;
+            console.error('CAC — proteção estrutural detectou alteração em componente crítico.', { checks, protection: CAC_PROTECTION });
+            return false;
+        }
 
         /*
          * CAC SYNC CONTRACT — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
@@ -1253,8 +1285,6 @@
             updateRoleUI();
             populateDropdowns();
             initCharts();
-            const searchModeEl = document.getElementById('search-only-mode');
-            if (searchModeEl) { searchOnlyMode = searchModeEl.checked; }
             applyFilters();
             setSyncStatus('loading', 'Conectando...');
             document.addEventListener('keydown', (e) => {
@@ -1559,6 +1589,7 @@
              * REGRA PERMANENTE DE FILTROS — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
              * updateRoleUI() NÃO deve renderizar novamente a tabela de demandas.
              * applyFilters() é o único responsável por aplicar o recorte atual.
+             * Seleções dos filtros são confirmadas pelo botão Buscar.
              * Renderizar a lista completa aqui fazia os filtros serem imediatamente
              * sobrescritos por renderUserTable() -> updateRoleUI().
              * Manter esta separação para preservar busca, servidor, origem, ano,
@@ -1620,15 +1651,13 @@
             document.getElementById('filter-semana').value = 'todos';
             document.getElementById('filter-status').value = 'todos';
             document.getElementById('filter-prazo').value = 'todos';
-            applyFilters();
+            applyFilters(true);
             showToast("Filtros redefinidos.", "info");
         }
 
         /* FILTROS E MÉTRICAS */
         function applyFilters() {
             const query = document.getElementById('search-global').value.trim().toLowerCase();
-            const searchModeEl = document.getElementById('search-only-mode');
-            searchOnlyMode = !!searchModeEl?.checked;
             const sVal = document.getElementById('filter-servidor').value;
             const oVal = document.getElementById('filter-origem').value;
             const aVal = document.getElementById('filter-ano').value;
@@ -1640,15 +1669,6 @@
             // Painel, demandas e relatório usam o recorte permitido ao usuário.
             const visibleProcesses = getCurrentVisibleProcesses();
             const visibleUsers = getCurrentVisibleUsers();
-
-            if (searchOnlyMode && !query) {
-                filteredProcesses = [];
-                updateMetrics(filteredProcesses);
-                renderProcessTable(filteredProcesses);
-                renderUserTable();
-                renderReportSummary(filteredProcesses);
-                return;
-            }
 
             const filtered = visibleProcesses.filter(p => {
                 const u = visibleUsers.find(usr => normalizeId(usr.id) === normalizeId(p.userId))
@@ -1776,8 +1796,17 @@
             cPiePrazo.data.datasets[0].data = [okCount, warnCount, expiredCount];
             cPiePrazo.update();
 
-            cBarUser.data.labels = users.map(u => u.name);
-            cBarUser.data.datasets[0].data = users.map(u => data.filter(p => p.userId == u.id).length);
+            const userCounts = getCurrentVisibleUsers()
+                .map(u => ({ name: u.name, total: data.filter(p => normalizeId(p.userId) === normalizeId(u.id)).length }))
+                .filter(x => x.total > 0)
+                .sort((a, b) => b.total - a.total);
+            const maxBars = 15;
+            const top = userCounts.slice(0, maxBars);
+            const rest = userCounts.slice(maxBars).reduce((sum, x) => sum + x.total, 0);
+            if (rest > 0) top.push({ name: `Outros (${userCounts.length - maxBars})`, total: rest });
+            cBarUser.data.labels = top.map(x => x.name);
+            cBarUser.data.datasets[0].data = top.map(x => x.total);
+            cBarUser.options.maintainAspectRatio = false;
             cBarUser.update();
         }
 
@@ -1827,7 +1856,7 @@
                 `;
             }).join('');
 
-            tbody.innerHTML = rows || `<tr><td colspan="9" class="empty-state">${searchOnlyMode && !document.getElementById('search-global').value.trim() ? 'Digite um termo na busca para exibir as demandas.' : 'Nenhuma demanda encontrada.'}</td></tr>`;
+            tbody.innerHTML = rows || `<tr><td colspan="9" class="empty-state">Nenhuma demanda encontrada.</td></tr>`;
         }
 
         function escapeHtml(value) {
@@ -2124,15 +2153,42 @@
         }
 
         function excelDateToLocal(value) {
-            if (value instanceof Date && !isNaN(value)) return value;
-            if (typeof value === 'number' && window.XLSX?.SSF) {
-                const d = window.XLSX.SSF.parse_date_code(value);
-                if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, Math.floor(d.S || 0));
+            if (value instanceof Date && !isNaN(value.getTime())) return value;
+
+            // Excel/SheetJS pode entregar datas como número ou como texto numérico.
+            if ((typeof value === 'number' || (typeof value === 'string' && /^\s*\d+(?:[.,]\d+)?\s*$/.test(value))) && window.XLSX?.SSF) {
+                const serial = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+                // Datas Excel usuais possuem serial muito acima de 1 e abaixo de ~100000.
+                if (Number.isFinite(serial) && serial > 1 && serial < 100000) {
+                    const d = window.XLSX.SSF.parse_date_code(serial);
+                    if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, Math.floor(d.S || 0));
+                }
             }
+
             const raw = String(value ?? '').trim();
             if (!raw) return null;
-            let m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ T](\d{1,2}):?(\d{2})?)?$/);
-            if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0));
+
+            // Formatos brasileiros: DD/MM/AAAA HH:MM[:SS], inclusive com segundos.
+            let m = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[ T,]+(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?)?$/);
+            if (m) {
+                const day = Number(m[1]);
+                const month = Number(m[2]);
+                const year = Number(m[3]);
+                const hour = Number(m[4] || 0);
+                const minute = Number(m[5] || 0);
+                const second = Number(m[6] || 0);
+                const d = new Date(year, month - 1, day, hour, minute, second);
+                if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) return d;
+            }
+
+            // ISO/local formats: AAAA-MM-DD HH:MM[:SS] e AAAA-MM-DDTHH:MM[:SS].
+            m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2})(?::(\d{2}))?(?::(\d{2}))?)?$/);
+            if (m) {
+                const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
+                if (!isNaN(d.getTime())) return d;
+            }
+
+            // Último recurso para valores ISO completos com fuso.
             const d = new Date(raw);
             return isNaN(d.getTime()) ? null : d;
         }
@@ -2259,7 +2315,8 @@
                         system,
                         protocol,
                         desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
-                        assignedAt: toDatetimeLocal(assigned),
+                        assignedAt: assigned ? assigned.toISOString() : '',
+                        assignedAtSource: assigned ? String(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao'])) : '',
                         year, month, week, priority, status,
                         importedFrom: file.name,
                         importedAt: window.serverTimestamp(),
@@ -2652,6 +2709,7 @@
             appId: "1:357351612350:web:758d49e9f895521867e3ef",
             measurementId: "G-68C60C0K57"
         };
+        window.CAC_FIREBASE_CONFIG = Object.freeze({ ...firebaseConfig });
 
         const app = initializeApp(firebaseConfig);
         try { getAnalytics(app); } catch (_) {}
@@ -2692,6 +2750,7 @@
         window.writeBatch = writeBatch;
 
         firebaseReady = true;
+        validateCACProtection();
 
         window.firebaseAuthMessage = (err) => {
             const code = err?.code || '';
@@ -2746,6 +2805,9 @@
          * auditoria, layout e demais funcionalidades já validadas.
          * Futuras alterações devem ser feitas somente mediante solicitação expressa
          * e sem substituir a fonte Firestore por armazenamento local.
+         * Filtros de seleção são aplicados pelo botão Buscar; a busca textual continua fluente.
+         * O gráfico por servidor limita a visualização a 15 servidores + agrupamento Outros,
+         * evitando poluição visual quando houver dezenas de servidores.
          */
 
         /*
