@@ -869,12 +869,12 @@
             <form onsubmit="handleLogin(event)">
                 <div class="form-group">
                     <label>Identificação de Acesso</label>
-                    <input type="text" id="login-user" required placeholder="admin ou e-mail cadastrado no Firebase">
+                    <input type="text" id="login-user" required placeholder="admin ou e-mail da Coordenadoria">
                 </div>
                 <div class="form-group">
                     <label>Senha de Acesso</label>
                     <input type="password" id="login-pass" required placeholder="••••••••">
-                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:4px;">A identificação <strong>admin</strong> aponta para a conta administrativa configurada no Firebase. O Firebase Authentication exige senha com no mínimo 6 caracteres; por isso, a senha literal <strong>admin</strong> não pode ser criada como senha do Firebase. Use a senha atualmente cadastrada ou redefina-a por <strong>Esqueci a senha</strong>.</div>
+                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:4px;">Use <strong>admin</strong> ou o e-mail da Coordenadoria e a senha de acesso. Para recuperar o acesso, utilize <strong>Esqueci a senha</strong>.</div>
                 </div>
                 <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
@@ -1059,7 +1059,7 @@
         let unsubAudit = null;
 
         /*
-         * CAC FIREBASE SYNC CONTRACT — NÃO REMOVER.
+         * CAC SYNC CONTRACT — NÃO REMOVER.
          * Regra permanente para futuras manutenções deste HTML:
          * 1) Dados operacionais devem viver no Firestore, nunca em localStorage/sessionStorage/indexedDB.
          * 2) Toda coleção que afeta o sistema deve usar onSnapshot para atualização em tempo real.
@@ -1180,28 +1180,32 @@
             return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
         }
 
-        /*
-         * CAC ADMINISTRATOR
-         * The alias "admin" always maps to this Firebase Authentication email.
-         * The password is NEVER stored in this HTML; Firebase Authentication validates it.
-         */
+        /* Conta administrativa da Coordenadoria. */
         const CAC_ADMIN_EMAIL = 'l.n.1999oficial@gmail.com';
 
-        /* AUTENTICAÇÃO E PERMISSÕES — Firebase Authentication */
+        /* AUTENTICAÇÃO E PERMISSÕES */
         function openLoginModal() { document.getElementById('modal-login').style.display = 'flex'; }
         function openChangePassModal() { document.getElementById('modal-change-pass').style.display = 'flex'; }
 
         async function handleLogin(e) {
             e.preventDefault();
-            if (!firebaseReady) return showToast("Firebase ainda está conectando. Tente novamente.", "warning");
+            if (!firebaseReady) return showToast("O sistema ainda está iniciando. Tente novamente em alguns segundos.", "warning");
             const identifier = document.getElementById('login-user').value.trim();
             const p = document.getElementById('login-pass').value;
 
             try {
                 const email = await resolveLoginEmail(identifier);
-                await signInWithEmailAndPassword(window.firebaseAuth, email, p);
+                const result = await signInWithEmailAndPassword(window.firebaseAuth, email, p);
+
+                // Define o perfil imediatamente após a autenticação, sem depender de qualquer cadastro auxiliar.
+                currentUser = result.user;
+                const emailAutenticado = String(result.user?.email || '').trim().toLowerCase();
+                isCoordenador = emailAutenticado === String(CAC_ADMIN_EMAIL).trim().toLowerCase();
+                adminAuth = { user: isCoordenador ? 'admin' : '', email: emailAutenticado };
+                updateRoleUI();
+
                 closeModal('modal-login');
-                showToast("Sessão autenticada com sucesso.", "success");
+                showToast(isCoordenador ? "Acesso de Coordenadoria liberado." : "Sessão autenticada com sucesso.", "success");
             } catch (err) {
                 console.error(err);
                 showToast(firebaseAuthMessage(err), "danger");
@@ -1209,9 +1213,9 @@
         }
 
         async function handleForgotPassword() {
-            if (!firebaseReady) return showToast("O Firebase ainda está inicializando.", "warning");
+            if (!firebaseReady) return showToast("O sistema ainda está inicializando.", "warning");
             const identifier = document.getElementById('login-user').value.trim();
-            if (!identifier) return showToast("Informe admin ou o e-mail da conta para recuperar a senha.", "warning");
+            if (!identifier) return showToast("Informe admin ou o e-mail da Coordenadoria para recuperar a senha.", "warning");
             try {
                 const email = await resolveLoginEmail(identifier);
                 await sendPasswordResetEmail(window.firebaseAuth, email);
@@ -1751,16 +1755,16 @@
 
     <!--
       CAC SECURITY/SYNC BLUEPRINT:
-      - Firebase Authentication controla identidade/senha.
-      - Firestore Security Rules deve controlar autorização de leitura/escrita.
+      - O serviço de autenticação controla identidade e senha.
+      - As regras de segurança do banco controlam autorização de leitura/escrita.
       - O HTML não deve ser usado como mecanismo de segurança.
       - Fonte única de verdade: Firestore.
       - Realtime obrigatório via onSnapshot para processos, servidores, configurações e auditoria.
-      - A conta da Coordenadoria é validada pelo Firebase Authentication; não criar senha fixa no HTML.
-      - O alias admin deve apontar para CAC_ADMIN_EMAIL e nunca depender de localStorage.
+      - A conta da Coordenadoria é validada pelo serviço de autenticação; não criar senha fixa no HTML.
+      - O alias admin deve apontar para CAC_ADMIN_EMAIL e nunca depender de armazenamento local.
       - Para produção, configure regras do Firestore para permitir alterações administrativas somente ao UID do coordenador.
     -->
-    <!-- FIREBASE: AUTENTICAÇÃO + FIRESTORE EM TEMPO REAL -->
+    <!-- SERVIÇOS DE AUTENTICAÇÃO E DADOS EM TEMPO REAL -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
@@ -1769,7 +1773,7 @@
             serverTimestamp, getDocs, query, orderBy, limit
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
         import {
-            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, createUserWithEmailAndPassword,
+            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
             EmailAuthProvider, reauthenticateWithCredential, updatePassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
@@ -1800,7 +1804,6 @@
         window.serverTimestamp = serverTimestamp;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.sendPasswordResetEmail = sendPasswordResetEmail;
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updatePassword = updatePassword;
@@ -1811,44 +1814,40 @@
             const messages = {
                 'auth/invalid-credential': 'Usuário ou senha inválidos.',
                 'auth/invalid-login-credentials': 'Usuário ou senha inválidos.',
-                'auth/user-not-found': 'Conta não encontrada no Firebase Authentication. Cadastre o e-mail do administrador em Authentication > Users.',
+                'auth/user-not-found': 'Conta de acesso não encontrada. Verifique a identificação informada ou use a recuperação de senha.',
                 'auth/wrong-password': 'Senha incorreta.',
                 'auth/too-many-requests': 'Muitas tentativas. Aguarde e tente novamente.',
                 'auth/requires-recent-login': 'Por segurança, faça login novamente antes de alterar a senha.',
                 'auth/weak-password': 'A senha deve possuir pelo menos 6 caracteres.',
                 'auth/email-already-in-use': 'A conta administrativa já existe. Use a senha cadastrada ou redefina pelo botão Esqueci a senha.',
-                'auth/operation-not-allowed': 'Ative o provedor E-mail/Senha em Firebase Authentication > Sign-in method.'
+                'auth/operation-not-allowed': 'O método de acesso por e-mail e senha não está disponível. Verifique a configuração de acesso da aplicação.'
             };
             return messages[code] || `Falha de autenticação (${code || 'desconhecida'}).`;
         };
 
         async function resolveLoginEmail(identifier) {
             const value = String(identifier || '').trim().toLowerCase();
-            if (!value) throw new Error('Informe o e-mail ou usuário.');
+            if (!value) throw new Error('Informe a identificação de acesso.');
             if (value === 'admin') return CAC_ADMIN_EMAIL;
+            if (value === CAC_ADMIN_EMAIL) return CAC_ADMIN_EMAIL;
             if (value.includes('@')) return value;
-
-            const coord = users.find(u =>
-                String(u.role || '').toLowerCase() === 'coordenador' &&
-                u.email && String(u.email).toLowerCase() === value
-            );
-            if (coord?.email) return coord.email.toLowerCase();
-            throw new Error('Use admin ou o e-mail cadastrado no Firebase Authentication.');
+            throw new Error('Use admin ou o e-mail da Coordenadoria.');
         }
         window.resolveLoginEmail = resolveLoginEmail;
 
         onAuthStateChanged(auth, async (user) => {
             currentUser = user || null;
-            isCoordenador = false;
+            const emailAtual = String(user?.email || '').trim().toLowerCase();
+            const emailCoordenadoria = String(CAC_ADMIN_EMAIL).trim().toLowerCase();
 
-            // A conta administrativa é reconhecida pelo e-mail do Firebase Authentication.
-            // Não depende de cadastro prévio em config/seguranca.
-            const coordByEmail = !!user && String(user.email || '').toLowerCase() === CAC_ADMIN_EMAIL;
-            const coordByRole = !!user && users.some(u =>
-                String(u.role || '').toLowerCase() === 'coordenador' &&
-                String(u.email || '').toLowerCase() === String(user.email || '').toLowerCase()
-            );
-            isCoordenador = !!user && (coordByEmail || coordByRole);
+            // A conta da Coordenadoria é identificada diretamente pelo e-mail definido no sistema.
+            // Não depende de config/seguranca, cadastro de servidor ou armazenamento local.
+            isCoordenador = !!user && emailAtual === emailCoordenadoria;
+
+            adminAuth = {
+                user: isCoordenador ? 'admin' : '',
+                email: isCoordenador ? emailCoordenadoria : emailAtual
+            };
 
             updateRoleUI();
             setSyncStatus('loading', 'Sincronizando...');
