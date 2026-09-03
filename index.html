@@ -574,7 +574,7 @@
         </div>
         <div style="font-size: 11px; color: var(--text-muted); padding-top: 14px; border-top: 1px solid var(--border);">
             <p><strong>CAC Management 3.0</strong></p>
-            <p>Controle Avançado de Produtividade</p>
+            <p>Controle Avançado de Produtividade da CAC</p>
         </div>
     </aside>
 
@@ -738,7 +738,7 @@
                     <div class="insight-card"><h3><i class="fa-solid fa-gauge-high"></i> Visão Executiva</h3>
                         <div class="insight-main" id="insight-efficiency">0% de resolutividade</div>
                         <div class="progress-track"><div class="progress-fill" id="insight-progress" style="width:0%"></div></div>
-                        <div class="insight-detail" id="insight-efficiency-detail">Aguardando dados do Firestore.</div>
+                        <div class="insight-detail" id="insight-efficiency-detail">Aguardando dados.</div>
                     </div>
                     <div class="insight-card"><h3><i class="fa-solid fa-triangle-exclamation"></i> Prioridades</h3>
                         <div class="risk-list" id="insight-risks"><div class="insight-detail">Nenhuma demanda crítica identificada.</div></div>
@@ -816,9 +816,14 @@
                 <div class="card-block">
                     <div class="card-header">
                         <h3>Equipe do CAC</h3>
-                        <button class="btn btn-accent admin-only" onclick="openUserModal()">
-                            <i class="fa-solid fa-user-plus"></i> Novo Servidor
-                        </button>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn btn-outline admin-only" onclick="openAccessModal()">
+                                <i class="fa-solid fa-user-shield"></i> Novo acesso
+                            </button>
+                            <button class="btn btn-accent admin-only" onclick="openUserModal()">
+                                <i class="fa-solid fa-user-plus"></i> Novo Servidor
+                            </button>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table>
@@ -880,6 +885,44 @@
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
                     <button type="button" class="btn btn-outline" onclick="handleForgotPassword()">Esqueci a senha</button>
                     <button type="submit" class="btn btn-accent">Autenticar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NOVO ACESSO -->
+    <div class="modal-backdrop" id="modal-access">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Cadastrar novo acesso</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-access')" style="cursor:pointer"></i>
+            </div>
+            <form onsubmit="handleCreateAccess(event)">
+                <div class="form-group">
+                    <label>Nome completo</label>
+                    <input type="text" id="access-name" required placeholder="Nome da pessoa">
+                </div>
+                <div class="form-group">
+                    <label>E-mail</label>
+                    <input type="email" id="access-email" required placeholder="nome@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Senha inicial</label>
+                    <input type="password" id="access-pass" required minlength="6" placeholder="Mínimo de 6 caracteres">
+                </div>
+                <div class="form-group">
+                    <label>Perfil</label>
+                    <select id="access-role">
+                        <option value="Servidor">Servidor</option>
+                        <option value="Coordenador">Coordenador</option>
+                    </select>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:4px;">
+                    A Coordenadoria pode conceder o perfil Coordenador. A pessoa utilizará o próprio e-mail e senha.
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-access')">Cancelar</button>
+                    <button type="submit" class="btn btn-accent">Criar acesso</button>
                 </div>
             </form>
         </div>
@@ -1597,7 +1640,7 @@
                 closeModal('modal-processo');
             } catch (err) {
                 console.error(err);
-                showToast("Não foi possível salvar no Firestore: " + err.message, "danger");
+                showToast("Não foi possível salvar a demanda: " + err.message, "danger");
             }
         }
 
@@ -1619,6 +1662,55 @@
 
             document.getElementById('lbl-modal-proc').innerText = "Editar Demanda";
             document.getElementById('modal-processo').style.display = 'flex';
+        }
+
+        function openAccessModal() {
+            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
+            ['access-name','access-email','access-pass'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('access-role').value = 'Servidor';
+            document.getElementById('modal-access').style.display = 'flex';
+        }
+
+        async function handleCreateAccess(e) {
+            e.preventDefault();
+            if (!isCoordenador) return showToast("Acesso de coordenador necessário.", "danger");
+
+            const name = document.getElementById('access-name').value.trim();
+            const email = document.getElementById('access-email').value.trim().toLowerCase();
+            const password = document.getElementById('access-pass').value;
+            const role = document.getElementById('access-role').value;
+
+            if (!name || !email || password.length < 6) {
+                return showToast("Preencha os dados corretamente.", "warning");
+            }
+
+            try {
+                const cred = await createUserWithEmailAndPassword(accessAuth, email, password);
+                await setDoc(doc(window.db, 'servidores', cred.user.uid), {
+                    name, email, role, authUid: cred.user.uid,
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                await signOut(accessAuth);
+                await writeAudit('CRIAÇÃO', 'Acesso', { nome: name, email, perfil: role });
+                closeModal('modal-access');
+                showToast("Novo acesso criado com sucesso.", "success");
+            } catch (err) {
+                console.error(err);
+                try { await signOut(accessAuth); } catch (_) {}
+
+                const code = err?.code || '';
+                if (code === 'auth/email-already-in-use') {
+                    return showToast("Este e-mail já possui um acesso.", "warning");
+                }
+                if (code === 'auth/weak-password') {
+                    return showToast("A senha precisa ter pelo menos 6 caracteres.", "warning");
+                }
+                if (code === 'permission-denied') {
+                    return showToast("O cadastro do perfil foi bloqueado pelas permissões do sistema.", "danger");
+                }
+                showToast("Não foi possível criar o acesso.", "danger");
+            }
         }
 
         async function saveUser(e) {
@@ -1769,12 +1861,12 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics.js";
         import {
-            getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc,
+            getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc,
             serverTimestamp, getDocs, query, orderBy, limit
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
         import {
             getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
-            EmailAuthProvider, reauthenticateWithCredential, updatePassword
+            EmailAuthProvider, reauthenticateWithCredential, updatePassword, createUserWithEmailAndPassword
         } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
         const firebaseConfig = {
@@ -1792,6 +1884,8 @@
 
         const db = getFirestore(app);
         const auth = getAuth(app);
+        const accessApp = initializeApp(firebaseConfig, 'cac-access-creator');
+        const accessAuth = getAuth(accessApp);
 
         window.db = db;
         window.firebaseAuth = auth;
@@ -1841,7 +1935,7 @@
             const emailCoordenadoria = String(CAC_ADMIN_EMAIL).trim().toLowerCase();
 
             // A conta da Coordenadoria é identificada diretamente pelo e-mail definido no sistema.
-            // Não depende de config/seguranca, cadastro de servidor ou armazenamento local.
+            // Não depende de configuração administrativa, cadastro de servidor ou armazenamento local.
             isCoordenador = !!user && emailAtual === emailCoordenadoria;
 
             adminAuth = {
@@ -1876,7 +1970,7 @@
                 err => {
                     console.error(err);
                     setSyncStatus('error', 'Erro de sincronização');
-                    showToast('Firestore: ' + err.message, 'danger');
+                    showToast('Não foi possível sincronizar os dados. Verifique as permissões de acesso.', 'danger');
                 }
             );
 
@@ -1891,7 +1985,7 @@
                 err => {
                     console.error(err);
                     setSyncStatus('error', 'Erro de sincronização');
-                    showToast('Firestore: ' + err.message, 'danger');
+                    showToast('Não foi possível sincronizar os dados. Verifique as permissões de acesso.', 'danger');
                 }
             );
 
