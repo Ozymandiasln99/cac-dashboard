@@ -566,12 +566,37 @@
         .edit-process-btn{color:var(--accent);}
         .delete-process-btn{color:var(--danger);}
         .process-actions{white-space:nowrap;}
+        .pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted)}
+        .pagination-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+        .pagination-controls .btn{min-width:34px;padding:7px 10px;justify-content:center}
+        .pagination-controls .page-current{font-weight:800;color:var(--text-main);padding:0 6px}
+        .deadline-popup{position:fixed;right:22px;bottom:22px;z-index:9998;width:min(390px,calc(100vw - 32px));background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--danger);border-radius:var(--radius);box-shadow:0 18px 45px rgba(0,0,0,.18);padding:14px 16px;display:none;animation:slideIn .25s cubic-bezier(.16,1,.3,1)}
+        .deadline-popup.show{display:block}
+        .deadline-popup-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+        .deadline-popup-title{font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px}
+        .deadline-popup-close{border:0;background:transparent;color:var(--text-muted);cursor:pointer;font-size:16px;padding:0 2px}
+        .deadline-popup-body{font-size:12px;color:var(--text-muted);line-height:1.5;margin:7px 0 10px}
+        .deadline-popup-actions{display:flex;gap:8px;justify-content:flex-end}
+        .alerts-table .alert-overdue{color:var(--danger);font-weight:800}.alerts-table .alert-attention{color:var(--warning);font-weight:800}
+        .audit-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+        @media(max-width:768px){.deadline-popup{right:16px;bottom:16px}.pagination-bar{align-items:flex-start;flex-direction:column}}
 
     </style>
 </head>
 <body>
 
     <div id="toast-container"></div>
+
+    <div id="deadline-popup" class="deadline-popup" role="alert">
+        <div class="deadline-popup-header">
+            <div class="deadline-popup-title"><i class="fa-solid fa-triangle-exclamation"></i> Atenção aos prazos</div>
+            <button class="deadline-popup-close" type="button" onclick="closeDeadlinePopup()" title="Fechar"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="deadline-popup-body" class="deadline-popup-body">Existem demandas com prazo que exigem atenção.</div>
+        <div class="deadline-popup-actions">
+            <button class="btn btn-outline" type="button" onclick="goToAlertsFromPopup()"><i class="fa-solid fa-bell"></i> Ver alertas</button>
+        </div>
+    </div>
 
     <!-- SIDEBAR -->
     <aside id="sidebar">
@@ -583,6 +608,7 @@
             <ul class="nav-links">
                 <li class="active"><a href="#" onclick="navigate('visao-geral', event)"><i class="fa-solid fa-chart-pie"></i> Painel Geral</a></li>
                 <li><a href="#" onclick="navigate('processos', event)"><i class="fa-solid fa-list-check"></i> Demandas & Prazos</a></li>
+                <li><a href="#" onclick="navigate('alertas', event)"><i class="fa-solid fa-bell"></i> Alertas de Prazo</a></li>
                 <li><a href="#" onclick="navigate('relatorios', event)"><i class="fa-solid fa-file-invoice"></i> Relatório Gerencial</a></li>
                 <li class="admin-only"><a href="#" onclick="navigate('usuarios', event)"><i class="fa-solid fa-users"></i> Gestão de Servidores</a></li>
                 <li class="admin-only"><a href="#" onclick="navigate('base-dados', event)"><i class="fa-solid fa-database"></i> Base de Dados</a></li>
@@ -632,11 +658,11 @@
             </div>
 
             <!-- CONTROLS & FILTERS BAR -->
-            <div class="controls-bar">
+            <div class="controls-bar" id="global-filters-bar">
                 <div class="controls-row">
                     <div class="search-box">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="search-global" placeholder="Buscar protocolo, demanda, servidor..." onkeyup="applyFilters()">
+                        <input type="text" id="search-global" placeholder="Buscar protocolo, demanda, servidor...">
                     </div>
                     <div class="btn-group">
                         <button class="btn btn-outline" onclick="resetFilters()">
@@ -809,6 +835,32 @@
                             <tbody id="tbl-processos"></tbody>
                         </table>
                     </div>
+                    <div id="process-pagination" class="pagination-bar"></div>
+                </div>
+            </div>
+
+            <!-- SECTION 2B: ALERTAS DE PRAZO -->
+            <div id="sec-alertas" class="view-section">
+                <div class="card-block">
+                    <div class="card-header">
+                        <div>
+                            <h3>Alertas de Prazos Regimentais</h3>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Demandas com prazo excedido ou vencendo em até 24 horas. Use os filtros acima para consultar servidor, período ou situação específica.</div>
+                        </div>
+                        <button id="btn-email-alerts" class="btn btn-outline admin-only" onclick="prepareOverdueEmail()" style="display:none;">
+                            <i class="fa-solid fa-envelope"></i> Preparar alerta por e-mail
+                        </button>
+                    </div>
+                    <div id="alerts-summary" class="insight-detail" style="margin-bottom:12px;">Nenhum alerta para exibir.</div>
+                    <div class="table-responsive alerts-table">
+                        <table>
+                            <thead>
+                                <tr><th>Servidor</th><th>Origem</th><th>Protocolo / Ticket</th><th>Atribuído em</th><th>Prioridade</th><th>Status</th><th>Situação</th></tr>
+                            </thead>
+                            <tbody id="tbl-alertas"></tbody>
+                        </table>
+                    </div>
+                    <div id="alerts-pagination" class="pagination-bar"></div>
                 </div>
             </div>
 
@@ -901,6 +953,9 @@
                             <h3>Histórico de Auditoria</h3>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Registra alterações feitas na operação e administração.</div>
                         </div>
+                    </div>
+                    <div class="audit-toolbar admin-only">
+                        <button class="btn btn-outline" onclick="openAuditCleanupModal()"><i class="fa-solid fa-trash-can"></i> Limpar auditoria</button>
                     </div>
                     <div class="table-responsive">
                         <table>
@@ -1171,6 +1226,23 @@
         </div>
     </div>
 
+    <!-- LIMPEZA DE AUDITORIA -->
+    <div class="modal-backdrop" id="modal-audit-cleanup">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Limpar histórico de auditoria</h3>
+                <i class="fa-solid fa-xmark" onclick="closeModal('modal-audit-cleanup')" style="cursor:pointer"></i>
+            </div>
+            <div style="font-size:12.5px;color:var(--text-muted);line-height:1.6;">
+                A limpeza remove permanentemente os registros da coleção de auditoria no Firestore. Esta ação não apaga demandas, servidores, bases ou configurações.
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modal-audit-cleanup')">Cancelar</button>
+                <button type="button" class="btn btn-accent" style="background-color:var(--danger);" onclick="executeAuditCleanup()"><i class="fa-solid fa-trash"></i> Apagar auditoria</button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL CONFIRMAÇÃO -->
     <div class="modal-backdrop" id="modal-confirm">
         <div class="modal">
@@ -1210,6 +1282,14 @@
         let unsubAudit = null;
         let unsubBaseDados = null;
         let baseDados = [];
+        let filtersApplied = false;
+        let processPage = 1;
+        let processPageSize = 10;
+        let alertPage = 1;
+        let alertPageSize = 10;
+        let deadlinePopupDismissed = false;
+        let lastDeadlinePopupKey = '';
+        let alertPopupSource = null;
 
         /*
          * PROTEÇÃO PERMANENTE DO CAC — NÃO ALTERAR FORA DE SOLICITAÇÃO EXPRESSA.
@@ -1227,7 +1307,8 @@
             realtimeRequired: true,
             storageRequired: false,
             localOperationalStorage: false,
-            protectedCollections: Object.freeze(['processos', 'servidores', 'config', 'auditoria', 'baseDados'])
+            protectedCollections: Object.freeze(['processos', 'servidores', 'config', 'auditoria', 'baseDados']),
+            protectedUIContracts: Object.freeze(['firebase-auth','firestore-realtime','filter-commit-search','process-pagination','alert-pagination','audit-cleanup','deadline-popup'])
         });
 
         function validateCACProtection() {
@@ -1260,6 +1341,10 @@
          * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
          * 10) Base de Dados usa Firestore para metadados e para os dados importados; não depende de Firebase Storage.
          * 11) Importação CSV/XLS/XLSX cria demandas em lotes e cria automaticamente servidores ausentes.
+         * 12) Demandas e Alertas só materializam resultados após Buscar; filtros não exibem o conjunto total ao abrir.
+         * 13) Demandas e Alertas usam paginação 10/20/50.
+         * 14) A auditoria pode ser limpa somente pela Coordenadoria e somente por ação explícita.
+         * 15) A barra de filtros fica oculta em Gestão de Servidores, Base de Dados e Auditoria.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
             enabled: true,
@@ -1285,7 +1370,8 @@
             updateRoleUI();
             populateDropdowns();
             initCharts();
-            applyFilters();
+            renderEmptyBeforeSearch();
+            updateFilterBarVisibility('visao-geral');
             setSyncStatus('loading', 'Conectando...');
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
@@ -1611,12 +1697,16 @@
             const titles = {
                 'visao-geral': 'Painel Geral de Desempenho',
                 'processos': 'Gestão de Demandas e Prazos',
+                'alertas': 'Alertas de Prazo',
                 'relatorios': 'Relatório Gerencial de Produtividade',
                 'usuarios': 'Gestão de Servidores', 'base-dados': 'Base de Dados', 'auditoria': 'Auditoria do Sistema'
             };
             document.getElementById('page-title').innerText = titles[viewId];
+            updateFilterBarVisibility(viewId);
+            if (viewId !== 'alertas') alertPopupSource = null;
             if (viewId === 'relatorios') renderReportSummary();
             if (viewId === 'auditoria') renderAuditTable();
+            if (viewId === 'alertas') renderAlertsTable();
             
             document.getElementById('sidebar').classList.remove('mobile-open');
         }
@@ -1642,6 +1732,24 @@
             }
         }
 
+        function updateFilterBarVisibility(viewId) {
+            const bar = document.getElementById('global-filters-bar');
+            if (!bar) return;
+            const visibleOn = new Set(['visao-geral','processos','relatorios','alertas']);
+            bar.style.display = visibleOn.has(viewId) ? '' : 'none';
+        }
+
+        function renderEmptyBeforeSearch() {
+            filteredProcesses = [];
+            processPage = 1;
+            updateMetrics([]);
+            renderProcessTable([], { beforeSearch: true });
+            renderProcessPagination(0);
+            renderReportSummary([]);
+            renderAlertsTable([], { beforeSearch: true });
+            renderAlertsPagination(0);
+        }
+
         function resetFilters() {
             document.getElementById('search-global').value = '';
             document.getElementById('filter-servidor').value = 'todos';
@@ -1651,12 +1759,26 @@
             document.getElementById('filter-semana').value = 'todos';
             document.getElementById('filter-status').value = 'todos';
             document.getElementById('filter-prazo').value = 'todos';
-            applyFilters(true);
-            showToast("Filtros redefinidos.", "info");
+            filtersApplied = false;
+            processPage = 1;
+            alertPage = 1;
+            alertPopupSource = null;
+            renderEmptyBeforeSearch();
+            showToast("Filtros redefinidos. Clique em Buscar para consultar as demandas.", "info");
         }
 
-        /* FILTROS E MÉTRICAS */
-        function applyFilters() {
+        /* FILTROS E MÉTRICAS — a consulta só é materializada após Buscar. */
+        function applyFilters(commit = false) {
+            if (commit) {
+                filtersApplied = true;
+                processPage = 1;
+                alertPage = 1;
+            }
+            if (!filtersApplied) {
+                renderEmptyBeforeSearch();
+                return;
+            }
+
             const query = document.getElementById('search-global').value.trim().toLowerCase();
             const sVal = document.getElementById('filter-servidor').value;
             const oVal = document.getElementById('filter-origem').value;
@@ -1666,7 +1788,6 @@
             const stVal = document.getElementById('filter-status').value;
             const prazoVal = document.getElementById('filter-prazo').value;
 
-            // Painel, demandas e relatório usam o recorte permitido ao usuário.
             const visibleProcesses = getCurrentVisibleProcesses();
             const visibleUsers = getCurrentVisibleUsers();
 
@@ -1675,34 +1796,31 @@
                     || users.find(usr => normalizeId(usr.id) === normalizeId(p.userId))
                     || { name: 'Desconhecido' };
                 const prazo = getPrazoStatus(p);
-
-                const matchQuery =
+                const matchQuery = !query ||
                     String(p.protocol || '').toLowerCase().includes(query) ||
                     String(p.desc || '').toLowerCase().includes(query) ||
                     String(u.name || '').toLowerCase().includes(query);
-
                 const matchS = (sVal === 'todos' || p.userId == sVal);
                 const matchO = (oVal === 'todos' || p.system === oVal);
                 const matchA = (aVal === 'todos' || p.year == aVal);
                 const matchM = (mVal === 'todos' || p.month == mVal);
                 const matchW = (wVal === 'todos' || p.week == wVal);
                 const matchSt = (stVal === 'todos' || p.status === stVal);
-
                 let matchPrazo = true;
                 if (prazoVal === 'OK') matchPrazo = !prazo.expired && prazo.label.includes('Prazo');
                 if (prazoVal === 'Atenção') matchPrazo = prazo.label === 'Atenção ao Prazo';
                 if (prazoVal === 'Excedido') matchPrazo = prazo.expired;
-
                 return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
             });
 
-            // O mesmo recorte filtrado alimenta as três áreas.
-            // Demandas = tabela; Painel = KPIs/gráficos; Relatório = consolidação.
             filteredProcesses = filtered.slice();
             updateMetrics(filteredProcesses);
             renderProcessTable(filteredProcesses);
+            renderProcessPagination(filteredProcesses.length);
             renderUserTable();
             renderReportSummary(filteredProcesses);
+            renderAlertsTable(filteredProcesses);
+            renderAlertsPagination(getAlertRecords(filteredProcesses).length);
         }
 
         function updateMetrics(data) {
@@ -1822,18 +1940,21 @@
             return 'badge-danger';
         }
 
-        function renderProcessTable(data) {
+        function renderProcessTable(data, options = {}) {
             const tbody = document.getElementById('tbl-processos');
             if (!tbody) return;
-
-            // Não usar onclick inline com IDs do Firestore.
-            // IDs são strings e podem conter caracteres que quebram atributos HTML.
-            // Os botões usam data-* + delegação de eventos abaixo.
-            const rows = data.map(p => {
+            if (options.beforeSearch) {
+                tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Use os filtros acima e clique em <strong>Buscar</strong> para exibir as demandas.</td></tr>';
+                return;
+            }
+            const totalPages = Math.max(1, Math.ceil(data.length / processPageSize));
+            if (processPage > totalPages) processPage = totalPages;
+            const start = (processPage - 1) * processPageSize;
+            const pageData = data.slice(start, start + processPageSize);
+            const rows = pageData.map(p => {
                 const u = users.find(usr => normalizeId(usr.id) === normalizeId(p.userId)) || { name: 'Não Atribuído' };
                 const prazo = getPrazoStatus(p);
                 const id = normalizeId(p.id);
-
                 return `
                     <tr data-process-row="${escapeHtml(id)}">
                         <td><strong>${escapeHtml(u.name)}</strong></td>
@@ -1845,18 +1966,43 @@
                         <td><span class="badge ${getStatusBadge(p.status)}">${escapeHtml(p.status || 'Pendente')}</span></td>
                         <td><span class="badge ${prazo.class}">${escapeHtml(prazo.label)} ${prazo.text ? `(${escapeHtml(prazo.text)})` : ''}</span></td>
                         <td class="process-actions">
-                            <button type="button" class="icon-action-btn edit-process-btn" data-process-action="edit" data-id="${escapeHtml(id)}" title="Alterar demanda" aria-label="Alterar demanda">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                            </button>
-                            <button type="button" class="icon-action-btn delete-process-btn" data-process-action="delete" data-id="${escapeHtml(id)}" title="Excluir demanda" aria-label="Excluir demanda">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
+                            <button type="button" class="icon-action-btn edit-process-btn" data-process-action="edit" data-id="${escapeHtml(id)}" title="Alterar demanda" aria-label="Alterar demanda"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button type="button" class="icon-action-btn delete-process-btn" data-process-action="delete" data-id="${escapeHtml(id)}" title="Excluir demanda" aria-label="Excluir demanda"><i class="fa-solid fa-trash"></i></button>
                         </td>
-                    </tr>
-                `;
+                    </tr>`;
             }).join('');
+            tbody.innerHTML = rows || '<tr><td colspan="9" class="empty-state">Nenhuma demanda encontrada para os filtros informados.</td></tr>';
+        }
 
-            tbody.innerHTML = rows || `<tr><td colspan="9" class="empty-state">Nenhuma demanda encontrada.</td></tr>`;
+        function renderProcessPagination(total) {
+            const el = document.getElementById('process-pagination');
+            if (!el) return;
+            if (!filtersApplied && !Array.isArray(alertPopupSource)) { el.innerHTML = ''; return; }
+            const pages = Math.max(1, Math.ceil(total / processPageSize));
+            if (processPage > pages) processPage = pages;
+            el.innerHTML = `
+                <div>Exibindo ${total ? ((processPage-1)*processPageSize+1) : 0}–${Math.min(processPage*processPageSize,total)} de <strong>${total}</strong> demanda(s)</div>
+                <div class="pagination-controls">
+                    <label for="process-page-size">Por página:</label>
+                    <select id="process-page-size" onchange="changeProcessPageSize(this.value)"><option value="10" ${processPageSize===10?'selected':''}>10</option><option value="20" ${processPageSize===20?'selected':''}>20</option><option value="50" ${processPageSize===50?'selected':''}>50</option></select>
+                    <button class="btn btn-outline" type="button" onclick="changeProcessPage(${processPage-1})" ${processPage<=1?'disabled':''}>‹</button>
+                    <span class="page-current">Página ${processPage} de ${pages}</span>
+                    <button class="btn btn-outline" type="button" onclick="changeProcessPage(${processPage+1})" ${processPage>=pages?'disabled':''}>›</button>
+                </div>`;
+        }
+
+        function changeProcessPage(page) {
+            const pages = Math.max(1, Math.ceil(filteredProcesses.length / processPageSize));
+            processPage = Math.min(Math.max(1, Number(page)||1), pages);
+            renderProcessTable(filteredProcesses);
+            renderProcessPagination(filteredProcesses.length);
+        }
+
+        function changeProcessPageSize(size) {
+            processPageSize = [10,20,50].includes(Number(size)) ? Number(size) : 10;
+            processPage = 1;
+            renderProcessTable(filteredProcesses);
+            renderProcessPagination(filteredProcesses.length);
         }
 
         function escapeHtml(value) {
@@ -2342,6 +2488,32 @@
             }
         }
 
+        function openAuditCleanupModal() {
+            if (!requireCoordinator('limpar a auditoria')) return;
+            document.getElementById('modal-audit-cleanup').style.display = 'flex';
+        }
+
+        async function executeAuditCleanup() {
+            if (!requireCoordinator('limpar a auditoria')) return;
+            if (!confirm('Atenção: todo o histórico de auditoria será excluído permanentemente. Continuar?')) return;
+            try {
+                const snapshot = await window.getDocs(window.collection(window.db, 'auditoria'));
+                const docs = snapshot.docs || [];
+                let deleted = 0;
+                for (let i=0; i<docs.length; i+=400) {
+                    const batch = window.cacWriteBatch(window.db);
+                    docs.slice(i,i+400).forEach(d => batch.delete(window.doc(window.db,'auditoria',d.id)));
+                    await batch.commit();
+                    deleted += Math.min(400, docs.length-i);
+                }
+                closeModal('modal-audit-cleanup');
+                showToast(`${deleted} registro(s) de auditoria removido(s).`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao limpar a auditoria: ' + err.message, 'danger');
+            }
+        }
+
         async function writeAudit(action, area, details = {}) {
             if (!window.db || !currentUser) return;
             try {
@@ -2607,28 +2779,108 @@
             }).join('');
         }
 
+        function getAlertRecords(source) {
+            return (Array.isArray(source) ? source : []).map(p => ({ p, prazo: getPrazoStatus(p) }))
+                .filter(x => x.p.status !== 'Concluído' && (x.prazo.expired || (!x.prazo.invalid && x.prazo.remainingHours <= 24)));
+        }
+
+        function renderAlertsTable(source = (Array.isArray(alertPopupSource) ? alertPopupSource : filteredProcesses), options = {}) {
+            const tbody = document.getElementById('tbl-alertas');
+            const summary = document.getElementById('alerts-summary');
+            const emailBtn = document.getElementById('btn-email-alerts');
+            if (!tbody) return;
+            if (options.beforeSearch || (!filtersApplied && !Array.isArray(alertPopupSource))) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Use os filtros acima e clique em <strong>Buscar</strong> para consultar os alertas.</td></tr>';
+                if (summary) summary.textContent = 'Aguardando uma consulta.';
+                if (emailBtn) emailBtn.style.display = 'none';
+                return;
+            }
+            const records = getAlertRecords(source);
+            const overdue = records.filter(x => x.prazo.expired).length;
+            const attention = records.length - overdue;
+            if (summary) summary.textContent = `${overdue} excedido(s) e ${attention} em atenção no recorte atual.`;
+            if (emailBtn) emailBtn.style.display = isCoordenador && overdue ? 'flex' : 'none';
+            const pages = Math.max(1, Math.ceil(records.length / alertPageSize));
+            if (alertPage > pages) alertPage = pages;
+            const pageData = records.slice((alertPage-1)*alertPageSize, alertPage*alertPageSize);
+            tbody.innerHTML = pageData.map(({p,prazo}) => {
+                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
+                const overdueClass = prazo.expired ? 'alert-overdue' : 'alert-attention';
+                return `<tr><td><strong>${escapeHtml(u?.name || 'Não atribuído')}</strong></td><td>${escapeHtml(p.system || '—')}</td><td>${escapeHtml(p.protocol || '—')}</td><td>${escapeHtml(formatDate(p.assignedAt))}</td><td>${escapeHtml(p.priority || 'Média')}</td><td>${escapeHtml(p.status || 'Pendente')}</td><td class="${overdueClass}">${escapeHtml(prazo.label)}${prazo.text ? ` · ${escapeHtml(prazo.text)}` : ''}</td></tr>`;
+            }).join('') || '<tr><td colspan="7" class="empty-state">Nenhum alerta no recorte atual.</td></tr>';
+            renderAlertsPagination(records.length);
+        }
+
+        function renderAlertsPagination(total) {
+            const el = document.getElementById('alerts-pagination');
+            if (!el) return;
+            if (!filtersApplied && !Array.isArray(alertPopupSource)) { el.innerHTML = ''; return; }
+            const pages = Math.max(1, Math.ceil(total / alertPageSize));
+            if (alertPage > pages) alertPage = pages;
+            el.innerHTML = `
+                <div>Exibindo ${total ? ((alertPage-1)*alertPageSize+1) : 0}–${Math.min(alertPage*alertPageSize,total)} de <strong>${total}</strong> alerta(s)</div>
+                <div class="pagination-controls">
+                    <label for="alert-page-size">Por página:</label>
+                    <select id="alert-page-size" onchange="changeAlertPageSize(this.value)"><option value="10" ${alertPageSize===10?'selected':''}>10</option><option value="20" ${alertPageSize===20?'selected':''}>20</option><option value="50" ${alertPageSize===50?'selected':''}>50</option></select>
+                    <button class="btn btn-outline" type="button" onclick="changeAlertPage(${alertPage-1})" ${alertPage<=1?'disabled':''}>‹</button>
+                    <span class="page-current">Página ${alertPage} de ${pages}</span>
+                    <button class="btn btn-outline" type="button" onclick="changeAlertPage(${alertPage+1})" ${alertPage>=pages?'disabled':''}>›</button>
+                </div>`;
+        }
+
+        function changeAlertPage(page) {
+            const records = getAlertRecords(Array.isArray(alertPopupSource) ? alertPopupSource : filteredProcesses);
+            const pages = Math.max(1, Math.ceil(records.length / alertPageSize));
+            alertPage = Math.min(Math.max(1, Number(page)||1), pages);
+            renderAlertsTable(Array.isArray(alertPopupSource) ? alertPopupSource : filteredProcesses);
+        }
+
+        function changeAlertPageSize(size) {
+            alertPageSize = [10,20,50].includes(Number(size)) ? Number(size) : 10;
+            alertPage = 1;
+            renderAlertsTable(Array.isArray(alertPopupSource) ? alertPopupSource : filteredProcesses);
+        }
+
+        function closeDeadlinePopup() {
+            deadlinePopupDismissed = true;
+            const popup = document.getElementById('deadline-popup');
+            if (popup) popup.classList.remove('show');
+        }
+
+        function goToAlertsFromPopup() {
+            deadlinePopupDismissed = true;
+            // O popup abre a aba com o conjunto completo de alertas visíveis, sem
+            // transformar isso em uma busca global e sem alterar os filtros do usuário.
+            alertPopupSource = getCurrentVisibleProcesses().slice();
+            alertPage = 1;
+            navigate('alertas');
+            renderAlertsTable(alertPopupSource);
+        }
+
+        function updateDeadlinePopup() {
+            const popup = document.getElementById('deadline-popup');
+            const body = document.getElementById('deadline-popup-body');
+            if (!popup || !body) return;
+            const currentVisible = getCurrentVisibleProcesses();
+            if (Array.isArray(alertPopupSource)) alertPopupSource = currentVisible.slice();
+            const records = getAlertRecords(currentVisible);
+            const overdue = records.filter(x => x.prazo.expired).length;
+            const attention = records.length - overdue;
+            if (!records.length) { popup.classList.remove('show'); lastDeadlinePopupKey=''; return; }
+            const key = `${overdue}|${attention}`;
+            if (key !== lastDeadlinePopupKey) deadlinePopupDismissed = false;
+            lastDeadlinePopupKey = key;
+            body.textContent = overdue ? `${overdue} demanda(s) estão com prazo excedido${attention ? ` e ${attention} em atenção.` : '.'}` : `${attention} demanda(s) vencem em até 24 horas.`;
+            if (!deadlinePopupDismissed) popup.classList.add('show');
+            if (document.getElementById('sec-alertas')?.classList.contains('active') && Array.isArray(alertPopupSource)) {
+                renderAlertsTable(alertPopupSource);
+            }
+        }
+
         function renderOverdueAlerts() {
             const panel = document.getElementById('overdue-alert-panel');
-            const summary = document.getElementById('overdue-alert-summary');
-            const list = document.getElementById('overdue-alert-list');
-            if (!panel || !summary || !list) return;
-            const active = getCurrentVisibleProcesses().map(p => ({p, prazo:getPrazoStatus(p)})).filter(x => x.p.status !== 'Concluído');
-            const overdue = active.filter(x => x.prazo.expired);
-            const attention = active.filter(x => !x.prazo.expired && !x.prazo.invalid && x.prazo.remainingHours <= 24);
-            panel.style.display = (overdue.length || attention.length) ? 'block' : 'none';
-            summary.textContent = overdue.length ? `${overdue.length} demanda(s) com prazo excedido${attention.length ? ` e ${attention.length} em atenção.` : '.'}` : `${attention.length} demanda(s) vencendo em até 24h.`;
-            const rows = [];
-            overdue.slice(0,8).forEach(({p,prazo}) => {
-                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
-                rows.push(`<div class="risk-item"><span><strong>${u?.name || 'Não atribuído'}</strong> · ${p.protocol || 'Sem protocolo'}</span><span class="badge badge-danger">${prazo.text}</span></div>`);
-            });
-            attention.slice(0,8).forEach(({p,prazo}) => {
-                const u = users.find(x => normalizeId(x.id) === normalizeId(p.userId));
-                rows.push(`<div class="risk-item"><span><strong>${u?.name || 'Não atribuído'}</strong> · ${p.protocol || 'Sem protocolo'}</span><span class="badge badge-warning">${prazo.text}</span></div>`);
-            });
-            list.innerHTML = rows.join('') || '<div class="insight-detail">Nenhum alerta ativo.</div>';
-            const btn = document.getElementById('btn-email-overdue');
-            if (btn) btn.style.display = (isCoordenador && overdue.length) ? 'flex' : 'none';
+            if (panel) panel.style.display = 'none';
+            updateDeadlinePopup();
         }
 
         function refreshDeadlineView() {
