@@ -1365,7 +1365,9 @@
             storageRequired: false,
             localOperationalStorage: false,
             protectedCollections: Object.freeze(['processos', 'servidores', 'config', 'auditoria', 'baseDados']),
-            protectedUIContracts: Object.freeze(['firebase-auth','firestore-realtime','mandatory-login','independent-tab-filters','sector-filter','filter-commit-search','process-pagination','alert-pagination','audit-cleanup','deadline-popup'])
+            protectedUIContracts: Object.freeze(['firebase-auth','firestore-realtime','mandatory-login','independent-tab-filters','sector-filter',
+                'upsert-base-por-protocolo',
+                'atribuido-em-data-horario-com-hifen','filter-commit-search','process-pagination','alert-pagination','audit-cleanup','deadline-popup'])
         });
 
         function validateCACProtection() {
@@ -2416,8 +2418,22 @@
             const raw = String(value ?? '').trim();
             if (!raw) return null;
 
+            // Formatos brasileiros: DD/MM/AAAA HH:MM[:SS], inclusive quando a planilha
+            // separa a data e o horário por hífen, por exemplo: 03/09/2026 - 08:30.
+            let m = raw.match(/^(\d{1,2})[\/]\s*(\d{1,2})[\/]\s*(\d{4})\s*[-–—]\s*(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?$/);
+            if (m) {
+                const day = Number(m[1]);
+                const month = Number(m[2]);
+                const year = Number(m[3]);
+                const hour = Number(m[4] || 0);
+                const minute = Number(m[5] || 0);
+                const second = Number(m[6] || 0);
+                const d = new Date(year, month - 1, day, hour, minute, second);
+                if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) return d;
+            }
+
             // Formatos brasileiros: DD/MM/AAAA HH:MM[:SS], inclusive com segundos.
-            let m = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[ T,]+(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?)?$/);
+            m = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[ T,]+(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?)?$/);
             if (m) {
                 const day = Number(m[1]);
                 const month = Number(m[2]);
@@ -2536,6 +2552,10 @@
                 const missing = required.slice(0, 4).filter(group => !group.some(x => headers.includes(normalizeImportedKey(x))));
                 if (missing.length) throw new Error('Colunas obrigatórias não encontradas. Necessárias: Servidor, Origem, Protocolo e Descricao.');
 
+                // Atualização da base = UPSERT por Protocolo:
+                // - protocolo existente: atualiza a demanda já cadastrada;
+                // - protocolo novo: cria uma nova demanda;
+                // - nenhuma quantidade de demandas é limitada pelo sistema.
                 const existingByProtocol = new Map();
                 for (const p of processes) {
                     const key = protocolKey(p.protocol);
@@ -2544,8 +2564,9 @@
                     existingByProtocol.get(key).push(p);
                 }
 
-                let validRows = 0, matchedRows = 0, notFound = 0, skipped = 0, duplicateProtocols = 0;
+                let validRows = 0, matchedRows = 0, addedRows = 0, skipped = 0, duplicateProtocols = 0;
                 const updates = [];
+                const creates = [];
                 const seenFileProtocols = new Set();
                 const serverMap = new Map(users.map(u => [serverKey(u.name), u]));
                 const newServers = [];
@@ -2558,9 +2579,6 @@
                     const pKey = protocolKey(protocol);
                     if (seenFileProtocols.has(pKey)) { duplicateProtocols++; continue; }
                     seenFileProtocols.add(pKey);
-
-                    const matched = existingByProtocol.get(pKey) || [];
-                    if (!matched.length) { notFound++; continue; }
 
                     let user = serverMap.get(serverKey(serverName));
                     if (!user) {
@@ -2585,23 +2603,30 @@
                         protocol,
                         desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
                         assignedAt: assigned ? assigned.toISOString() : '',
-                        assignedAtSource: assigned ? String(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao'])) : '',
+                        assignedAtSource: String(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao']) || ''),
                         year, month, week, priority, status,
                         importedFrom: file.name,
                         importedAt: window.serverTimestamp(),
                         updatedAt: window.serverTimestamp(),
                         updatedBy: currentUser?.uid || null
                     };
-                    for (const existing of matched) updates.push({ id: existing.id, payload });
-                    matchedRows += matched.length;
+
+                    const matched = existingByProtocol.get(pKey) || [];
+                    if (matched.length) {
+                        for (const existing of matched) updates.push({ id: existing.id, payload });
+                        matchedRows += matched.length;
+                    } else {
+                        creates.push(payload);
+                        addedRows++;
+                    }
                 }
 
-                if (!updates.length) {
-                    showToast(`Nenhuma demanda foi encontrada pelo Protocolo. ${notFound} registro(s) do arquivo não correspondem às demandas atuais.`, 'warning');
+                if (!updates.length && !creates.length) {
+                    showToast('Nenhuma linha válida foi encontrada para atualizar ou acrescentar à base.', 'warning');
                     return;
                 }
 
-                const confirmation = `Atualização da base “${base.name}”\n\nArquivo: ${file.name}\nLinhas válidas: ${validRows}\nDemandas encontradas por Protocolo: ${matchedRows}\nProtocolos não encontrados: ${notFound}\nProtocolos repetidos no arquivo: ${duplicateProtocols}\n\nAs demandas encontradas serão ATUALIZADAS pelos dados do novo arquivo. Demandas sem o Protocolo correspondente não serão criadas.\n\nContinuar?`;
+                const confirmation = `Atualização da base “${base.name}”\n\nArquivo: ${file.name}\nLinhas válidas: ${validRows}\nDemandas atualizadas por Protocolo: ${matchedRows}\nNovas demandas a acrescentar: ${addedRows}\nProtocolos repetidos no arquivo: ${duplicateProtocols}\nLinhas ignoradas: ${skipped}\n\nProtocolos existentes serão ATUALIZADOS e protocolos novos serão ACRESCENTADOS à base.\n\nContinuar?`;
                 if (!confirm(confirmation)) return;
 
                 for (const u of newServers) {
@@ -2620,6 +2645,18 @@
                     await batch.commit();
                 }
 
+                for (let i = 0; i < creates.length; i += 400) {
+                    const batch = window.cacWriteBatch(window.db);
+                    creates.slice(i, i + 400).forEach(payload => {
+                        batch.set(window.doc(window.collection(window.db, 'processos')), {
+                            ...payload,
+                            createdAt: window.serverTimestamp(),
+                            createdBy: currentUser?.uid || null
+                        });
+                    });
+                    await batch.commit();
+                }
+
                 await window.updateDoc(window.doc(window.db, 'baseDados', base.id), {
                     fileName: file.name,
                     size: file.size,
@@ -2629,19 +2666,21 @@
                     importedAt: window.serverTimestamp(),
                     updatedAt: window.serverTimestamp(),
                     updatedBy: currentUser?.uid || null,
-                    lastUpdateMode: 'substituicao_por_protocolo',
+                    lastUpdateMode: 'substituicao_por_protocolo_com_acrescimo',
                     lastUpdatedRecords: matchedRows,
-                    lastNotFoundRecords: notFound
+                    lastAddedRecords: addedRows,
+                    lastNotFoundRecords: 0,
+                    lastAddedRecords: addedRows
                 });
 
                 await writeAudit('ATUALIZAÇÃO', 'Base de Dados', {
                     id: base.id, nome: base.name, arquivo: file.name,
-                    linhas: rows.length, demandasAtualizadas: matchedRows,
-                    protocolosNaoEncontrados: notFound, protocolosRepetidosNoArquivo: duplicateProtocols,
-                    servidoresCriados: newServers.length, modo: 'substituicao_por_protocolo'
+                    linhas: rows.length, demandasAtualizadas: matchedRows, demandasAcrescentadas: addedRows,
+                    protocolosRepetidosNoArquivo: duplicateProtocols, linhasIgnoradas: skipped,
+                    servidoresCriados: newServers.length, modo: 'substituicao_por_protocolo_com_acrescimo'
                 });
 
-                showToast(`${matchedRows} demanda(s) atualizada(s) pelo Protocolo. ${notFound} não encontrada(s).`, 'success');
+                showToast(`${matchedRows} demanda(s) atualizada(s) e ${addedRows} nova(s) acrescentada(s) à base.`, 'success');
             } catch (err) {
                 console.error(err);
                 showToast('Falha na atualização da base: ' + err.message, 'danger');
