@@ -833,6 +833,7 @@
                         </div>
                         <div id="overdue-alert-list" class="risk-list" style="margin-top:12px;"></div>
                     </div>
+                    <div style="font-size:11px;color:var(--text-muted);margin:8px 0 12px;line-height:1.5;">Use o botão <i class="fa-solid fa-arrows-rotate"></i> em uma base para selecionar um arquivo atualizado. O CAC localizará cada demanda pelo <strong>Protocolo</strong> e substituirá os dados encontrados; protocolos que não existirem no sistema não criarão novas demandas.</div>
                     <div class="table-responsive">
                         <table>
                             <thead>
@@ -943,13 +944,14 @@
                     <div class="card-header">
                         <div>
                             <h3>Base de Dados</h3>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Cadastre bases no Firestore e importe CSV/Excel diretamente para carregar demandas automaticamente — sem Firebase Storage.</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Cadastre bases, importe CSV/Excel e atualize demandas existentes pelo Protocolo — sem Firebase Storage.</div>
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn-outline admin-only" onclick="openBaseDatabaseModal()"><i class="fa-solid fa-plus"></i> Nova base</button>
                             <button class="btn btn-accent admin-only" onclick="document.getElementById('import-data-file').click()"><i class="fa-solid fa-file-import"></i> Importar dados</button>
                             <button class="btn btn-outline admin-only" onclick="openDataCleanupModal()"><i class="fa-solid fa-broom"></i> Limpar demandas por período</button>
                             <input id="import-data-file" type="file" hidden accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="importDataFile(event)">
+                            <input id="update-base-file" type="file" hidden accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="updateBaseFromFile(event)">
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -2236,7 +2238,8 @@
                     <td>${imported ? `${imported.toLocaleString('pt-BR')} registros` : 'Sem importação'}</td>
                     <td>${dt ? escapeHtml(dt.toLocaleString('pt-BR')) : 'Processando…'}</td>
                     <td class="process-actions">
-                        <button type="button" class="icon-action-btn edit-process-btn" data-base-action="edit" data-id="${escapeHtml(normalizeId(b.id))}" title="Alterar"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button type="button" class="icon-action-btn edit-process-btn" data-base-action="edit" data-id="${escapeHtml(normalizeId(b.id))}" title="Alterar nome da base"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button type="button" class="icon-action-btn" data-base-action="update-file" data-id="${escapeHtml(normalizeId(b.id))}" title="Atualizar demandas por Protocolo"><i class="fa-solid fa-arrows-rotate"></i></button>
                         <button type="button" class="icon-action-btn delete-process-btn" data-base-action="delete" data-id="${escapeHtml(normalizeId(b.id))}" title="Excluir"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>`;
@@ -2251,6 +2254,7 @@
             const action = button.getAttribute('data-base-action');
             if (!id) return;
             if (action === 'edit') openBaseDatabaseModal(id);
+            if (action === 'update-file') triggerBaseUpdate(id);
             if (action === 'delete') confirmDelete('base', id);
         });
 
@@ -2409,6 +2413,162 @@
             let hash = 0; const key = serverKey(name);
             for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i) | 0;
             return `import_${Math.abs(hash)}`;
+        }
+
+        function protocolKey(value) {
+            return String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        function triggerBaseUpdate(baseId) {
+            if (!requireCoordinator('atualizar uma base de dados')) return;
+            const base = baseDados.find(b => normalizeId(b.id) === normalizeId(baseId));
+            if (!base) return showToast('Base de dados não encontrada.', 'danger');
+            const input = document.getElementById('update-base-file');
+            if (!input) return showToast('Seletor de arquivo de atualização indisponível.', 'danger');
+            input.dataset.baseId = normalizeId(base.id);
+            input.value = '';
+            input.click();
+        }
+
+        async function updateBaseFromFile(event) {
+            if (!requireCoordinator('atualizar uma base de dados')) { event.target.value = ''; return; }
+            const file = event.target.files?.[0];
+            const baseId = normalizeId(event.target.dataset.baseId || '');
+            event.target.value = '';
+            event.target.dataset.baseId = '';
+            if (!file || !baseId) return;
+            if (file.size > 20 * 1024 * 1024) return showToast('O arquivo excede o limite de 20 MB.', 'warning');
+            if (!window.XLSX) return showToast('Leitor de CSV/Excel ainda não carregou. Recarregue a página.', 'danger');
+
+            const base = baseDados.find(b => normalizeId(b.id) === baseId);
+            if (!base) return showToast('Base de dados não encontrada.', 'danger');
+
+            try {
+                const buffer = await file.arrayBuffer();
+                const wb = window.XLSX.read(buffer, { type: 'array', cellDates: true });
+                const sheetName = wb.SheetNames[0];
+                if (!sheetName) throw new Error('A planilha não possui uma aba válida.');
+                const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: true });
+                if (!rows.length) throw new Error('O arquivo não possui linhas de dados.');
+
+                const sample = rows[0];
+                const required = [
+                    ['Servidor'], ['Origem'], ['Protocolo'], ['Descricao', 'Descrição'], ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao'], ['SLA_Prioridade', 'SLA Prioridade'], ['Ano'], ['Mes', 'Mês'], ['Semana'], ['Status'], ['Situacao_SLA', 'Situação SLA']
+                ];
+                const headers = Object.keys(sample).map(normalizeImportedKey);
+                const missing = required.slice(0, 4).filter(group => !group.some(x => headers.includes(normalizeImportedKey(x))));
+                if (missing.length) throw new Error('Colunas obrigatórias não encontradas. Necessárias: Servidor, Origem, Protocolo e Descricao.');
+
+                const existingByProtocol = new Map();
+                for (const p of processes) {
+                    const key = protocolKey(p.protocol);
+                    if (!key) continue;
+                    if (!existingByProtocol.has(key)) existingByProtocol.set(key, []);
+                    existingByProtocol.get(key).push(p);
+                }
+
+                let validRows = 0, matchedRows = 0, notFound = 0, skipped = 0, duplicateProtocols = 0;
+                const updates = [];
+                const seenFileProtocols = new Set();
+                const serverMap = new Map(users.map(u => [serverKey(u.name), u]));
+                const newServers = [];
+
+                for (const row of rows) {
+                    const serverName = String(getImportedCell(row, ['Servidor', 'Servidor Responsavel', 'Servidor Responsável']) || '').trim();
+                    const protocol = String(getImportedCell(row, ['Protocolo', 'Protocolo Ticket', 'Ticket']) || '').trim();
+                    if (!serverName || !protocol) { skipped++; continue; }
+                    validRows++;
+                    const pKey = protocolKey(protocol);
+                    if (seenFileProtocols.has(pKey)) { duplicateProtocols++; continue; }
+                    seenFileProtocols.add(pKey);
+
+                    const matched = existingByProtocol.get(pKey) || [];
+                    if (!matched.length) { notFound++; continue; }
+
+                    let user = serverMap.get(serverKey(serverName));
+                    if (!user) {
+                        const sid = stableImportId(serverName);
+                        user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
+                        serverMap.set(serverKey(serverName), user);
+                        newServers.push(user);
+                    }
+
+                    const assigned = excelDateToLocal(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao']));
+                    const system = importedSystem(getImportedCell(row, ['Origem']));
+                    const priority = importedPriority(getImportedCell(row, ['SLA_Prioridade', 'SLA Prioridade', 'Prioridade']));
+                    const status = importedStatus(getImportedCell(row, ['Status']));
+                    const yearRaw = getImportedCell(row, ['Ano']);
+                    const year = String(yearRaw || (assigned ? assigned.getFullYear() : new Date().getFullYear()));
+                    const month = importedMonth(getImportedCell(row, ['Mes', 'Mês']), assigned);
+                    const week = importedWeek(assigned, getImportedCell(row, ['Semana']));
+                    const payload = {
+                        userId: normalizeId(user.id),
+                        authUid: normalizeId(user.authUid || ''),
+                        system,
+                        protocol,
+                        desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
+                        assignedAt: assigned ? assigned.toISOString() : '',
+                        assignedAtSource: assigned ? String(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao'])) : '',
+                        year, month, week, priority, status,
+                        importedFrom: file.name,
+                        importedAt: window.serverTimestamp(),
+                        updatedAt: window.serverTimestamp(),
+                        updatedBy: currentUser?.uid || null
+                    };
+                    for (const existing of matched) updates.push({ id: existing.id, payload });
+                    matchedRows += matched.length;
+                }
+
+                if (!updates.length) {
+                    showToast(`Nenhuma demanda foi encontrada pelo Protocolo. ${notFound} registro(s) do arquivo não correspondem às demandas atuais.`, 'warning');
+                    return;
+                }
+
+                const confirmation = `Atualização da base “${base.name}”\n\nArquivo: ${file.name}\nLinhas válidas: ${validRows}\nDemandas encontradas por Protocolo: ${matchedRows}\nProtocolos não encontrados: ${notFound}\nProtocolos repetidos no arquivo: ${duplicateProtocols}\n\nAs demandas encontradas serão ATUALIZADAS pelos dados do novo arquivo. Demandas sem o Protocolo correspondente não serão criadas.\n\nContinuar?`;
+                if (!confirm(confirmation)) return;
+
+                for (const u of newServers) {
+                    await window.setDoc(window.doc(window.db, 'servidores', u.id), {
+                        name: u.name, email: '', role: 'Servidor', importedAuto: true,
+                        createdAt: window.serverTimestamp(), updatedAt: window.serverTimestamp(),
+                        updatedBy: currentUser?.uid || null
+                    }, { merge: true });
+                }
+
+                for (let i = 0; i < updates.length; i += 400) {
+                    const batch = window.cacWriteBatch(window.db);
+                    updates.slice(i, i + 400).forEach(item => {
+                        batch.update(window.doc(window.db, 'processos', item.id), item.payload);
+                    });
+                    await batch.commit();
+                }
+
+                await window.updateDoc(window.doc(window.db, 'baseDados', base.id), {
+                    fileName: file.name,
+                    size: file.size,
+                    contentType: file.type || 'application/octet-stream',
+                    importedRows: rows.length,
+                    columns: Object.keys(sample),
+                    importedAt: window.serverTimestamp(),
+                    updatedAt: window.serverTimestamp(),
+                    updatedBy: currentUser?.uid || null,
+                    lastUpdateMode: 'substituicao_por_protocolo',
+                    lastUpdatedRecords: matchedRows,
+                    lastNotFoundRecords: notFound
+                });
+
+                await writeAudit('ATUALIZAÇÃO', 'Base de Dados', {
+                    id: base.id, nome: base.name, arquivo: file.name,
+                    linhas: rows.length, demandasAtualizadas: matchedRows,
+                    protocolosNaoEncontrados: notFound, protocolosRepetidosNoArquivo: duplicateProtocols,
+                    servidoresCriados: newServers.length, modo: 'substituicao_por_protocolo'
+                });
+
+                showToast(`${matchedRows} demanda(s) atualizada(s) pelo Protocolo. ${notFound} não encontrada(s).`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Falha na atualização da base: ' + err.message, 'danger');
+            }
         }
 
         async function importDataFile(event) {
