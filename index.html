@@ -867,7 +867,7 @@
                         </div>
                         <div id="overdue-alert-list" class="risk-list" style="margin-top:12px;"></div>
                     </div>
-                    <div style="font-size:11px;color:var(--text-muted);margin:8px 0 12px;line-height:1.5;">Use o botão <i class="fa-solid fa-arrows-rotate"></i> em uma base para selecionar um arquivo atualizado. O CAC localizará cada demanda pelo <strong>Protocolo</strong> e substituirá os dados encontrados; protocolos que não existirem no sistema não criarão novas demandas.</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin:8px 0 12px;line-height:1.5;">Use o botão <i class="fa-solid fa-arrows-rotate"></i> em uma base para selecionar um arquivo atualizado. O CAC localizará cada demanda pelo <strong>Protocolo</strong>, atualizará as existentes e acrescentará automaticamente os protocolos novos. Demandas sem servidor também serão processadas.</div>
                     <div class="table-responsive">
                         <table>
                             <thead>
@@ -2418,18 +2418,19 @@
             const raw = String(value ?? '').trim();
             if (!raw) return null;
 
-            // Formatos brasileiros: DD/MM/AAAA HH:MM[:SS], inclusive quando a planilha
-            // separa a data e o horário por hífen, por exemplo: 03/09/2026 - 08:30.
-            let m = raw.match(/^(\d{1,2})[\/]\s*(\d{1,2})[\/]\s*(\d{4})\s*[-–—]\s*(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?$/);
+            // Formatos exportados pelo relatório CAC: DD/MM/AA - HHhMM,
+            // além das variações com ano de 4 dígitos, ':' e espaços.
+            let m = raw.match(/^(\d{1,2})[\/]\s*(\d{1,2})[\/]\s*(\d{2,4})\s*[-–—]\s*(\d{1,2})(?:h|:)(\d{2})(?:(?::|h)(\d{2}))?$/i);
             if (m) {
                 const day = Number(m[1]);
                 const month = Number(m[2]);
-                const year = Number(m[3]);
+                let year = Number(m[3]);
+                if (year < 100) year += 2000;
                 const hour = Number(m[4] || 0);
                 const minute = Number(m[5] || 0);
                 const second = Number(m[6] || 0);
                 const d = new Date(year, month - 1, day, hour, minute, second);
-                if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day) return d;
+                if (d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day && hour < 24 && minute < 60 && second < 60) return d;
             }
 
             // Formatos brasileiros: DD/MM/AAAA HH:MM[:SS], inclusive com segundos.
@@ -2574,18 +2575,23 @@
                 for (const row of rows) {
                     const serverName = String(getImportedCell(row, ['Servidor', 'Servidor Responsavel', 'Servidor Responsável']) || '').trim();
                     const protocol = String(getImportedCell(row, ['Protocolo', 'Protocolo Ticket', 'Ticket']) || '').trim();
-                    if (!serverName || !protocol) { skipped++; continue; }
+                    // O relatório pode trazer demandas ainda sem servidor. Elas continuam
+                    // sendo válidas e devem ser atualizadas/acrescentadas normalmente.
+                    if (!protocol) { skipped++; continue; }
                     validRows++;
                     const pKey = protocolKey(protocol);
                     if (seenFileProtocols.has(pKey)) { duplicateProtocols++; continue; }
                     seenFileProtocols.add(pKey);
 
-                    let user = serverMap.get(serverKey(serverName));
-                    if (!user) {
-                        const sid = stableImportId(serverName);
-                        user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
-                        serverMap.set(serverKey(serverName), user);
-                        newServers.push(user);
+                    let user = null;
+                    if (serverName) {
+                        user = serverMap.get(serverKey(serverName));
+                        if (!user) {
+                            const sid = stableImportId(serverName);
+                            user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
+                            serverMap.set(serverKey(serverName), user);
+                            newServers.push(user);
+                        }
                     }
 
                     const assigned = excelDateToLocal(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao']));
@@ -2597,8 +2603,8 @@
                     const month = importedMonth(getImportedCell(row, ['Mes', 'Mês']), assigned);
                     const week = importedWeek(assigned, getImportedCell(row, ['Semana']));
                     const payload = {
-                        userId: normalizeId(user.id),
-                        authUid: normalizeId(user.authUid || ''),
+                        userId: user ? normalizeId(user.id) : '',
+                        authUid: user ? normalizeId(user.authUid || '') : '',
                         system,
                         protocol,
                         desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
@@ -2669,8 +2675,7 @@
                     lastUpdateMode: 'substituicao_por_protocolo_com_acrescimo',
                     lastUpdatedRecords: matchedRows,
                     lastAddedRecords: addedRows,
-                    lastNotFoundRecords: 0,
-                    lastAddedRecords: addedRows
+                    lastNotFoundRecords: 0
                 });
 
                 await writeAudit('ATUALIZAÇÃO', 'Base de Dados', {
@@ -2736,13 +2741,16 @@
                 for (const row of rows) {
                     const serverName = String(getImportedCell(row, ['Servidor', 'Servidor Responsavel', 'Servidor Responsável']) || '').trim();
                     const protocol = String(getImportedCell(row, ['Protocolo', 'Protocolo Ticket', 'Ticket']) || '').trim();
-                    if (!serverName || !protocol) { skipped++; continue; }
-                    let user = serverMap.get(serverKey(serverName));
-                    if (!user) {
-                        const sid = stableImportId(serverName);
-                        user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
-                        serverMap.set(serverKey(serverName), user);
-                        newServers.push(user);
+                    if (!protocol) { skipped++; continue; }
+                    let user = null;
+                    if (serverName) {
+                        user = serverMap.get(serverKey(serverName));
+                        if (!user) {
+                            const sid = stableImportId(serverName);
+                            user = { id: sid, name: serverName, email: '', role: 'Servidor', importedAuto: true };
+                            serverMap.set(serverKey(serverName), user);
+                            newServers.push(user);
+                        }
                     }
                     const assigned = excelDateToLocal(getImportedCell(row, ['Data_Atribuicao', 'Data Atribuicao', 'Data de Atribuicao']));
                     const system = importedSystem(getImportedCell(row, ['Origem']));
@@ -2753,8 +2761,8 @@
                     const month = importedMonth(getImportedCell(row, ['Mes', 'Mês']), assigned);
                     const week = importedWeek(assigned, getImportedCell(row, ['Semana']));
                     const payload = {
-                        userId: normalizeId(user.id),
-                        authUid: normalizeId(user.authUid || ''),
+                        userId: user ? normalizeId(user.id) : '',
+                        authUid: user ? normalizeId(user.authUid || '') : '',
                         system,
                         protocol,
                         desc: String(getImportedCell(row, ['Descricao', 'Descrição', 'Descricao da Demanda', 'Descrição da Demanda']) || '').trim(),
