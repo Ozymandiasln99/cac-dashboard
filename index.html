@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Executivo de Gestão Integrada - CAC</title>
+    <!-- PREFERÊNCIA DE TEMA — única preferência visual persistida localmente.
+         Não armazena dados operacionais, autenticação ou dados do Firestore. -->
+    <script>
+        (function () {
+            try {
+                if (window.localStorage.getItem('CAC_THEME') === 'dark') {
+                    document.documentElement.classList.add('cac-dark-preload');
+                }
+            } catch (_) {}
+        })();
+    </script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- SheetJS: leitura de CSV/XLS/XLSX no navegador -->
@@ -30,6 +41,11 @@
             --radius: 12px;
             --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
             --sidebar-width: 270px;
+        }
+
+        html.cac-dark-preload body {
+            background-color: #0b0f19;
+            color: #f9fafb;
         }
 
         body.dark-mode {
@@ -1296,8 +1312,9 @@
          * Este bloco define os componentes críticos que devem permanecer intactos:
          * Firebase/Auth, Firestore, sincronização realtime, permissões, estrutura das
          * coleções e regras de origem dos dados. As alterações solicitadas devem ser
-         * cirúrgicas e não podem introduzir localStorage/sessionStorage/IndexedDB ou
-         * Firebase Storage.
+         * cirúrgicas e não podem introduzir localStorage/sessionStorage/IndexedDB para
+         * dados operacionais ou Firebase Storage. A única exceção autorizada é a preferência
+         * visual de tema (claro/dark) no próprio navegador/dispositivo.
          */
         const CAC_PROTECTION = Object.freeze({
             projectId: 'cac-painel',
@@ -1337,6 +1354,7 @@
          * 5) A interface é apenas uma visão do Firestore; não deve criar uma "fonte local" paralela.
          * 6) Se este HTML for alterado no futuro, preserve as importações, window.onSnapshot e funções de escrita acima/abaixo.
          * 7) NÃO adicionar localStorage/sessionStorage/indexedDB para dados operacionais.
+         *    Única exceção autorizada: localStorage['CAC_THEME'] exclusivamente para a preferência visual claro/dark.
          * 8) NÃO iniciar listeners window.onSnapshot enquanto currentUser for null; aguardar a restauração da autenticação.
          * 9) NÃO modificar a lógica de inicialização acima sem preservar a proteção contra permission-denied no recarregamento.
          * 10) Base de Dados usa Firestore para metadados e para os dados importados; não depende de Firebase Storage.
@@ -1345,6 +1363,8 @@
          * 13) Demandas e Alertas usam paginação 10/20/50.
          * 14) A auditoria pode ser limpa somente pela Coordenadoria e somente por ação explícita.
          * 15) A barra de filtros fica oculta em Gestão de Servidores, Base de Dados e Auditoria.
+         * 16) A preferência visual claro/dark é persistida somente no dispositivo/navegador via CAC_THEME.
+         * 17) Gestão de Servidores é independente de filtersApplied e deve sempre renderizar users.
          */
         window.CAC_SYNC_CONTRACT = Object.freeze({
             enabled: true,
@@ -1705,6 +1725,7 @@
             updateFilterBarVisibility(viewId);
             if (viewId !== 'alertas') alertPopupSource = null;
             if (viewId === 'relatorios') renderReportSummary();
+            if (viewId === 'usuarios') renderUserTable();
             if (viewId === 'auditoria') renderAuditTable();
             if (viewId === 'alertas') renderAlertsTable();
             
@@ -2921,11 +2942,26 @@
             showToast("Relatório CSV exportado com sucesso.", "success");
         }
 
-        function toggleTheme() {
-            document.body.classList.toggle('dark-mode');
-            const isDark = document.body.classList.contains('dark-mode');
-            document.getElementById('theme-icon').className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        function applySavedTheme() {
+            let isDark = false;
+            try { isDark = window.localStorage.getItem('CAC_THEME') === 'dark'; } catch (_) {}
+            document.body.classList.toggle('dark-mode', isDark);
+            document.documentElement.classList.remove('cac-dark-preload');
+            const icon = document.getElementById('theme-icon');
+            if (icon) icon.className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
         }
+
+        function toggleTheme() {
+            const isDark = !document.body.classList.contains('dark-mode');
+            document.body.classList.toggle('dark-mode', isDark);
+            try { window.localStorage.setItem('CAC_THEME', isDark ? 'dark' : 'light'); } catch (_) {}
+            document.documentElement.classList.remove('cac-dark-preload');
+            const icon = document.getElementById('theme-icon');
+            if (icon) icon.className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        }
+
+        // Preferência visual local: não participa da sincronização nem armazena dados do sistema.
+        document.addEventListener('DOMContentLoaded', applySavedTheme, { once: true });
     </script>
 
     <!--
@@ -2933,7 +2969,8 @@
       - O serviço de autenticação controla identidade e senha.
       - As regras de segurança do banco controlam autorização de leitura/escrita.
       - O HTML não deve ser usado como mecanismo de segurança.
-      - Fonte única de verdade: Firestore.
+      - Fonte única de verdade: Firestore para dados operacionais.
+      - Única preferência local permitida: CAC_THEME para claro/dark.
       - Realtime obrigatório via window.onSnapshot para processos, servidores, configurações e auditoria.
       - A conta da Coordenadoria é validada pelo serviço de autenticação; não criar senha fixa no HTML.
       - O alias admin deve apontar para CAC_ADMIN_EMAIL e nunca depender de armazenamento local.
@@ -3151,6 +3188,7 @@
                 snapshot => {
                     users = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     populateDropdowns();
+                    renderUserTable();
                     applyFilters();
                     if (currentUser) updateRoleUI();
                 },
