@@ -469,6 +469,37 @@
         body.dark-mode .prazo-expired { background: #7f1d1d; color: #fecaca; border-color: #991b1b; }
 
         /* MODAIS */
+        /* LOGIN CAC — tela obrigatória, minimalista e sem modo visitante. */
+        #modal-login.cac-login-screen {
+            background: var(--bg-main);
+            backdrop-filter: none;
+            z-index: 99999;
+            padding: 20px;
+        }
+        #modal-login.cac-login-screen .modal {
+            max-width: 390px;
+            padding: 34px 30px 30px;
+            border: 1px solid var(--border);
+            box-shadow: 0 24px 70px rgba(15,23,42,.16);
+            gap: 22px;
+        }
+        .cac-login-brand {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:8px; text-align:center;
+        }
+        .cac-login-logo {
+            width:78px; height:78px; border-radius:20px;
+            display:flex; align-items:center; justify-content:center;
+            background:var(--accent); color:#fff;
+            font-size:54px; line-height:1; font-weight:900;
+            box-shadow:0 12px 30px rgba(0,0,0,.14);
+            letter-spacing:-5px; padding-right:5px;
+        }
+        .cac-login-title { font-size:18px; font-weight:900; color:var(--text-main); }
+        .cac-login-subtitle { font-size:11px; color:var(--text-muted); }
+        .cac-login-actions { display:flex; flex-direction:column; gap:9px; margin-top:4px; }
+        .cac-login-actions .btn { justify-content:center; width:100%; }
+
         .modal-backdrop {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -658,7 +689,7 @@
                 </button>
 
                 <button id="btn-login-trigger" class="btn btn-accent" onclick="openLoginModal()">
-                    <i class="fa-solid fa-lock"></i> Coordenador
+                    <i class="fa-solid fa-lock"></i> Entrar
                 </button>
                 <button id="btn-logout-trigger" class="btn btn-secondary" onclick="handleLogout()" style="display: none;">
                     <i class="fa-solid fa-right-from-bracket"></i> Sair
@@ -697,6 +728,9 @@
                     <div class="filter-group">
                         <label>Servidor:</label>
                         <select id="filter-servidor"><option value="todos">Todos</option></select>
+
+                        <label>Setor:</label>
+                        <select id="filter-setor"><option value="todos">Todos</option></select>
 
                         <label>Origem:</label>
                         <select id="filter-origem">
@@ -928,6 +962,7 @@
                                 <tr>
                                     <th>Nome Completo</th>
                                     <th>E-mail</th>
+                                    <th>Setor</th>
                                     <th>Perfil</th>
                                     <th class="admin-only">Ações</th>
                                 </tr>
@@ -989,27 +1024,25 @@
 
     <!-- MODAIS DE SISTEMA -->
 
-    <!-- LOGIN MODAL -->
-    <div class="modal-backdrop" id="modal-login">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>Autenticação da Coordenadoria</h3>
-                <i class="fa-solid fa-xmark" onclick="closeModal('modal-login')" style="cursor:pointer"></i>
+    <!-- LOGIN CAC — obrigatório antes de qualquer área do sistema -->
+    <div class="modal-backdrop cac-login-screen" id="modal-login">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cac-login-title">
+            <div class="cac-login-brand">
+                <div class="cac-login-logo" aria-label="CAC">C</div>
+                <div class="cac-login-title" id="cac-login-title">Acesso ao Sistema CAC</div>
+                <div class="cac-login-subtitle">Entre com seu acesso de Servidor ou Coordenador</div>
             </div>
             <form onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label>Identificação de Acesso</label>
-                    <input type="text" id="login-user" required placeholder="admin ou e-mail da Coordenadoria">
+                    <label>Login</label>
+                    <input type="text" id="login-user" required autocomplete="username" placeholder="E-mail institucional">
                 </div>
-                <div class="form-group">
-                    <label>Senha de Acesso</label>
-                    <input type="password" id="login-pass" required placeholder="••••••••">
-                    <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:4px;">Use <strong>admin</strong> ou o e-mail da Coordenadoria e a senha de acesso. Para recuperar o acesso, utilize <strong>Esqueci a senha</strong>.</div>
+                <div class="form-group" style="margin-top:12px;">
+                    <label>Senha</label>
+                    <input type="password" id="login-pass" required autocomplete="current-password" placeholder="Digite sua senha">
                 </div>
-                <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-login')">Cancelar</button>
-                    <button type="button" class="btn btn-outline" onclick="handleForgotPassword()">Esqueci a senha</button>
-                    <button type="submit" class="btn btn-accent">Autenticar</button>
+                <div class="cac-login-actions">
+                    <button type="submit" class="btn btn-accent"><i class="fa-solid fa-right-to-bracket"></i> Entrar</button>
                 </div>
             </form>
         </div>
@@ -1177,6 +1210,10 @@
                     <input type="email" id="usr-email" required>
                 </div>
                 <div class="form-group">
+                    <label>Setor</label>
+                    <input type="text" id="usr-setor" maxlength="120" placeholder="Informe o setor do servidor">
+                </div>
+                <div class="form-group">
                     <label>Perfil de Acesso</label>
                     <select id="usr-role">
                         <option value="Servidor">Servidor</option>
@@ -1301,6 +1338,7 @@
         let unsubBaseDados = null;
         let baseDados = [];
         let filtersApplied = false;
+        // Filtros são deliberadamente descartados ao trocar de aba; não há estado de busca compartilhado entre abas.
         let processPage = 1;
         let processPageSize = 10;
         let alertPage = 1;
@@ -1327,7 +1365,7 @@
             storageRequired: false,
             localOperationalStorage: false,
             protectedCollections: Object.freeze(['processos', 'servidores', 'config', 'auditoria', 'baseDados']),
-            protectedUIContracts: Object.freeze(['firebase-auth','firestore-realtime','filter-commit-search','process-pagination','alert-pagination','audit-cleanup','deadline-popup'])
+            protectedUIContracts: Object.freeze(['firebase-auth','firestore-realtime','mandatory-login','independent-tab-filters','sector-filter','filter-commit-search','process-pagination','alert-pagination','audit-cleanup','deadline-popup'])
         });
 
         function validateCACProtection() {
@@ -1377,6 +1415,19 @@
         });
         const CAC_SYNC_CONTRACT = window.CAC_SYNC_CONTRACT;
 
+        /*
+         * CAC — MEMÓRIA DE MANUTENÇÃO / ALTERAÇÕES SOLICITADAS
+         * 2026-09-04
+         * 1) Filtros das abas são independentes e zerados ao navegar entre abas.
+         * 2) Novo filtro "Setor" vinculado ao cadastro de servidores.
+         * 3) Setor é salvo no Firestore em servidores/{id}; o filtro só encontra
+         *    demandas cujo servidor possui o setor selecionado. Servidores sem setor
+         *    não entram em uma busca por setor específico.
+         * 4) Login obrigatório: não existe mais Modo Visitante; somente Servidor ou Coordenador.
+         * 5) Firebase Auth + Firestore realtime + estrutura das coleções permanecem preservados.
+         * 6) Não usar localStorage/sessionStorage/IndexedDB para dados operacionais.
+         */
+
         // Sincronização continua ativa em segundo plano; o indicador Online/Offline não é exibido.
         function setSyncStatus(status, message) {
             window.cacSyncState = { status, message, at: Date.now() };
@@ -1397,7 +1448,10 @@
             setSyncStatus('loading', 'Conectando...');
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
-                    document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+                    document.querySelectorAll('.modal-backdrop').forEach(m => {
+                        if (m.id !== 'modal-login' || currentUser) m.style.display = 'none';
+                    });
+                    if (!currentUser) openLoginModal();
                 }
             });
         });
@@ -1501,7 +1555,7 @@
         const CAC_ADMIN_EMAIL = 'l.n.1999oficial@gmail.com';
 
         /* AUTENTICAÇÃO E PERMISSÕES — modelo por e-mail principal + perfil UID */
-        function openLoginModal() { document.getElementById('modal-login').style.display = 'flex'; }
+        function openLoginModal() { const m = document.getElementById('modal-login'); if (m) m.style.display = 'flex'; }
         function openChangePassModal() { document.getElementById('modal-change-pass').style.display = 'flex'; }
 
         async function handleLogin(e) {
@@ -1642,14 +1696,13 @@
          * CAC — VISIBILIDADE PERMANENTE
          * NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
          *
-         * Visitantes sem login podem consultar o Painel Geral, Demandas e
-         * Relatório Gerencial. Usuários autenticados com perfil Servidor veem
+         * Usuários autenticados com perfil Servidor veem
          * somente as demandas atribuídas ao próprio perfil. Coordenadores veem
          * todos os dados. As ações de alteração/exclusão continuam exclusivas
          * da Coordenadoria.
          */
         function getCurrentVisibleProcesses() {
-            if (!currentUser) return processes.slice(); // visitante público: leitura
+            if (!currentUser) return []; // acesso obrigatório: sem autenticação não há leitura
             if (isCoordenador) return processes.slice();
             const profile = getCurrentProfile();
             if (String(profile?.role || '').trim().toLowerCase() !== 'servidor') return [];
@@ -1658,7 +1711,7 @@
         }
 
         function getCurrentVisibleUsers() {
-            if (!currentUser) return users.slice();
+            if (!currentUser) return [];
             if (isCoordenador) return users.slice();
             const profile = getCurrentProfile();
             if (String(profile?.role || '').trim().toLowerCase() !== 'servidor') return [];
@@ -1682,16 +1735,19 @@
                 roleLbl.innerText = currentUser?.email ? `Coordenador · ${currentUser.email}` : 'Coordenador';
                 btnLogin.style.display = 'none'; btnLogout.style.display = 'flex'; btnChangePass.style.display = 'flex';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+                closeModal('modal-login');
             } else if (servidorLogado) {
                 badge.className = 'role-badge visitor';
                 roleLbl.innerText = profile?.name ? `Servidor · ${profile.name}` : 'Servidor';
                 btnLogin.style.display = 'none'; btnLogout.style.display = 'flex'; btnChangePass.style.display = 'none';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                closeModal('modal-login');
             } else {
                 badge.className = 'role-badge visitor';
-                roleLbl.innerText = 'Modo Visitante';
-                btnLogin.style.display = 'flex'; btnLogout.style.display = 'none'; btnChangePass.style.display = 'none';
+                roleLbl.innerText = 'Acesso não autenticado';
+                btnLogin.style.display = 'none'; btnLogout.style.display = 'none'; btnChangePass.style.display = 'none';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                if (document.getElementById('modal-login')) document.getElementById('modal-login').style.display = 'flex';
             }
             /*
              * REGRA PERMANENTE DE FILTROS — NÃO REMOVER / NÃO ALTERAR SEM REVISÃO.
@@ -1708,6 +1764,12 @@
         /* NAVEGAÇÃO VIA MENU */
         function navigate(viewId, event) {
             if (event) event.preventDefault();
+            if (!currentUser) {
+                openLoginModal();
+                return;
+            }
+            // Cada aba começa com uma busca nova. O recorte anterior jamais é carregado para a próxima aba.
+            resetFilters({ silent: true });
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
             
@@ -1736,10 +1798,17 @@
 
         function populateDropdowns() {
             const selectFilter = document.getElementById('filter-servidor');
+            const selectSector = document.getElementById('filter-setor');
             const selectProc = document.getElementById('proc-servidor');
             const visibleUsers = getCurrentVisibleUsers();
 
             selectFilter.innerHTML = '<option value="todos">Todos</option>';
+            if (selectSector) {
+                const sectors = [...new Set(visibleUsers.map(u => String(u.sector || '').trim()).filter(Boolean))]
+                    .sort((a,b) => a.localeCompare(b, 'pt-BR'));
+                selectSector.innerHTML = '<option value="todos">Todos</option>' + sectors
+                    .map(sector => `<option value="${escapeHtml(sector)}">${escapeHtml(sector)}</option>`).join('');
+            }
             selectProc.innerHTML = '';
 
             visibleUsers.forEach(u => {
@@ -1773,9 +1842,11 @@
             renderAlertsPagination(0);
         }
 
-        function resetFilters() {
+        function resetFilters(options = {}) {
+            const silent = !!options.silent;
             document.getElementById('search-global').value = '';
             document.getElementById('filter-servidor').value = 'todos';
+            if (document.getElementById('filter-setor')) document.getElementById('filter-setor').value = 'todos';
             document.getElementById('filter-origem').value = 'todos';
             document.getElementById('filter-ano').value = 'todos';
             document.getElementById('filter-mes').value = 'todos';
@@ -1787,7 +1858,7 @@
             alertPage = 1;
             alertPopupSource = null;
             renderEmptyBeforeSearch();
-            showToast("Filtros redefinidos. Clique em Buscar para consultar as demandas.", "info");
+            if (!silent) showToast("Filtros redefinidos. Clique em Buscar para consultar as demandas.", "info");
         }
 
         /* FILTROS E MÉTRICAS — a consulta só é materializada após Buscar. */
@@ -1804,6 +1875,7 @@
 
             const query = document.getElementById('search-global').value.trim().toLowerCase();
             const sVal = document.getElementById('filter-servidor').value;
+            const sectorVal = document.getElementById('filter-setor')?.value || 'todos';
             const oVal = document.getElementById('filter-origem').value;
             const aVal = document.getElementById('filter-ano').value;
             const mVal = document.getElementById('filter-mes').value;
@@ -1824,6 +1896,10 @@
                     String(p.desc || '').toLowerCase().includes(query) ||
                     String(u.name || '').toLowerCase().includes(query);
                 const matchS = (sVal === 'todos' || p.userId == sVal);
+                // Setor é atributo do cadastro do servidor. Demandas de servidor sem setor
+                // nunca aparecem quando um setor específico é selecionado.
+                const userSector = String(u.sector || '').trim();
+                const matchSector = (sectorVal === 'todos' ? true : !!userSector && userSector === sectorVal);
                 const matchO = (oVal === 'todos' || p.system === oVal);
                 const matchA = (aVal === 'todos' || p.year == aVal);
                 const matchM = (mVal === 'todos' || p.month == mVal);
@@ -1833,7 +1909,7 @@
                 if (prazoVal === 'OK') matchPrazo = !prazo.expired && prazo.label.includes('Prazo');
                 if (prazoVal === 'Atenção') matchPrazo = prazo.label === 'Atenção ao Prazo';
                 if (prazoVal === 'Excedido') matchPrazo = prazo.expired;
-                return matchQuery && matchS && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
+                return matchQuery && matchS && matchSector && matchO && matchA && matchM && matchW && matchSt && matchPrazo;
             });
 
             filteredProcesses = filtered.slice();
@@ -2072,6 +2148,7 @@
                     <tr>
                         <td><strong>${escapeHtml(u.name)}</strong></td>
                         <td>${escapeHtml(u.email)}</td>
+                        <td>${u.sector ? escapeHtml(u.sector) : '<span style="color:var(--text-muted)">Sem definição</span>'}</td>
                         <td><span class="badge ${u.role === 'Coordenador' ? 'badge-sipac' : 'badge-sagitta'}">${escapeHtml(u.role)}</span></td>
                         <td class="admin-only">
                             <button type="button" class="icon-action-btn" data-user-action="edit" data-id="${escapeHtml(id)}" title="Alterar servidor" aria-label="Alterar servidor">
@@ -2839,6 +2916,7 @@
             const userData = {
                 name: document.getElementById('usr-nome').value.trim(),
                 email: document.getElementById('usr-email').value.trim().toLowerCase(),
+                sector: document.getElementById('usr-setor').value.trim(),
                 role: document.getElementById('usr-role').value,
                 updatedAt: window.serverTimestamp()
             };
@@ -2846,11 +2924,11 @@
             try {
                 if (id) {
                     await window.updateDoc(window.doc(window.db, 'servidores', id), userData);
-                    await writeAudit('ATUALIZAÇÃO', 'Servidor', { id, nome: userData.name, email: userData.email, perfil: userData.role });
+                    await writeAudit('ATUALIZAÇÃO', 'Servidor', { id, nome: userData.name, email: userData.email, setor: userData.sector || '', perfil: userData.role });
                     showToast("Dados do servidor atualizados e sincronizados.", "success");
                 } else {
                     const created = await window.addDoc(window.collection(window.db, 'servidores'), { ...userData, createdAt: window.serverTimestamp() });
-                    await writeAudit('CRIAÇÃO', 'Servidor', { id: created.id, nome: userData.name, email: userData.email, perfil: userData.role });
+                    await writeAudit('CRIAÇÃO', 'Servidor', { id: created.id, nome: userData.name, email: userData.email, setor: userData.sector || '', perfil: userData.role });
                     showToast("Novo servidor cadastrado e sincronizado.", "success");
                 }
                 closeModal('modal-usuario');
@@ -2868,6 +2946,7 @@
             document.getElementById('usr-id').value = usr.id;
             document.getElementById('usr-nome').value = usr.name;
             document.getElementById('usr-email').value = usr.email;
+            document.getElementById('usr-setor').value = usr.sector || '';
             document.getElementById('usr-role').value = usr.role;
 
             document.getElementById('modal-usuario').style.display = 'flex';
@@ -2943,10 +3022,17 @@
             if (!syncCoordinatorState()) return showToast("Somente Coordenadores podem cadastrar servidores.", "danger");
             document.getElementById('form-usuario').reset();
             document.getElementById('usr-id').value = '';
+            document.getElementById('usr-setor').value = '';
             document.getElementById('modal-usuario').style.display = 'flex';
         }
 
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function closeModal(id) {
+            if (id === 'modal-login' && !currentUser) {
+                openLoginModal();
+                return;
+            }
+            document.getElementById(id).style.display = 'none';
+        }
 
         function renderAuditTable() {
             const tbody = document.getElementById('tbl-auditoria');
@@ -3223,7 +3309,7 @@
             if (value === 'admin') return CAC_ADMIN_EMAIL;
             if (value === CAC_ADMIN_EMAIL) return CAC_ADMIN_EMAIL;
             if (value.includes('@')) return value;
-            throw new Error('Use admin ou o e-mail da Coordenadoria.');
+            throw new Error('Informe o e-mail institucional cadastrado no sistema.');
         }
         window.resolveLoginEmail = resolveLoginEmail;
 
@@ -3296,16 +3382,20 @@
             updateRoleUI();
 
             /*
-             * VISITANTE PÚBLICO:
-             * A ausência de login não impede a leitura das áreas públicas.
-             * Mantemos os listeners de processos/servidores ativos para que
-             * Painel Geral, Demandas e Relatório funcionem sem autenticação.
-             * Configuração e Auditoria continuam restritas e não são assinadas
-             * para visitantes.
+             * LOGIN OBRIGATÓRIO:
+             * Sem autenticação não existem listeners do Firestore e nenhuma área
+             * do sistema é disponibilizada. A tela CAC permanece aberta até o login.
              */
             if (!user) {
-                setSyncStatus('loading', 'Carregando consulta pública...');
-                subscribeData({ publicVisitor: true });
+                setSyncStatus('loading', 'Aguardando autenticação...');
+                if (unsubProcessos) { unsubProcessos(); unsubProcessos = null; }
+                if (unsubServidores) { unsubServidores(); unsubServidores = null; }
+                if (unsubConfig) { unsubConfig(); unsubConfig = null; }
+                if (unsubAudit) { unsubAudit(); unsubAudit = null; }
+                if (unsubBaseDados) { unsubBaseDados(); unsubBaseDados = null; }
+                processes = []; users = []; baseDados = [];
+                renderEmptyBeforeSearch();
+                openLoginModal();
                 return;
             }
 
@@ -3359,7 +3449,7 @@
                 }
             );
 
-            // Configuração e auditoria permanecem fora da área pública.
+            // Configuração e auditoria permanecem restritas à Coordenadoria.
             if (!publicVisitor) {
                 unsubConfig = onSnapshot(
                     doc(db, 'config', 'seguranca'),
